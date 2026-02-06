@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-
-// 온보딩 페이지 경로는 프로젝트 환경에 맞게 유지하세요.
-// import 'package:pet_diary/discription/onboarding_page.dart';
+import 'package:pet_diary/mainPage/total_diary.dart';
 import 'package:pet_diary/mainPage/odd_pet.dart';
 import 'package:pet_diary/mainPage/daily_pet.dart';
 
@@ -92,8 +90,27 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('최근 일기', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              Text('전체보기 →', style: TextStyle(color: Colors.purple[300], fontSize: 12)),
+              const Text(
+                '최근 일기',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              GestureDetector(
+                onTap: () {
+                  // DiaryListPage로 이동
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => DiaryListPage()),
+                  );
+                },
+                child: Text(
+                  '전체보기 →',
+                  style: TextStyle(
+                    color: Colors.purple[300],
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500, // 약간의 두께감을 주면 더 버튼 같습니다.
+                  ),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -294,7 +311,3 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
     );
   }
 }
-
-// 임시 페이지 클래스
-class PageA extends StatelessWidget { const PageA({super.key}); @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('일상 일기'))); }
-//class PageB extends StatelessWidget { const PageB({super.key}); @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('이상 행동'))); }
