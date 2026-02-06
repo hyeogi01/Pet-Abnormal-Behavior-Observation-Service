@@ -167,16 +167,35 @@ class PetActivityPage extends StatelessWidget {
 
   Widget _buildDataTile(String title, String value, Color valueColor) {
     return Container(
-      padding: const EdgeInsets.all(10),
+      // 박스 내부 여백을 조절하여 크기감을 줍니다.
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FCF9),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center, // 세로 중앙 정렬
+        crossAxisAlignment: CrossAxisAlignment.center, // 가로 중앙 정렬
         children: [
-          Text(title, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: valueColor)),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 14, // 제목 크기 키움
+              color: Colors.grey,
+              fontWeight: FontWeight.w500,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 4), // 간격 추가
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 20, // 수치 크기 대폭 키움
+              fontWeight: FontWeight.bold,
+              color: valueColor,
+            ),
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
     );
