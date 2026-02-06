@@ -1,6 +1,14 @@
 import 'package:flutter/material.dart';
+// 1. 온보딩 페이지 파일 임포트 (경로 확인!)
+import 'package:pet_diary/discription/onboarding_page.dart';
 
-void main() => runApp(MaterialApp(home: PetHealthDashboard()));
+void main() {
+  runApp(MaterialApp(
+    // 2. 앱의 첫 화면을 온보딩 페이지로 설정
+    home: const OnboardingPage(),
+    debugShowCheckedModeBanner: false,
+  ));
+}
 
 class PetHealthDashboard extends StatelessWidget {
   @override
