@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+
+// 온보딩 페이지 경로는 프로젝트 환경에 맞게 유지하세요.
+// import 'package:pet_diary/discription/onboarding_page.dart';
+import 'package:pet_diary/mainPage/odd_pet.dart';
 import 'package:pet_diary/mainPage/daily_pet.dart';
 
 void main() {
@@ -81,7 +85,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
                       () => Navigator.push(context, MaterialPageRoute(builder: (context) => daily_pet()))),
               const SizedBox(width: 12),
               _buildActionButton(Icons.error_outline, '이상 행동', '건강 체크', Colors.orange,
-                      () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PageB()))),
+                      () => Navigator.push(context, MaterialPageRoute(builder: (context) => PageB()))),
             ],
           ),
           const SizedBox(height: 24),
@@ -293,4 +297,4 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
 
 // 임시 페이지 클래스
 class PageA extends StatelessWidget { const PageA({super.key}); @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('일상 일기'))); }
-class PageB extends StatelessWidget { const PageB({super.key}); @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('이상 행동'))); }
+//class PageB extends StatelessWidget { const PageB({super.key}); @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('이상 행동'))); }
