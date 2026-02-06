@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:pet_diary/main.dart';
+import 'package:pet_diary/pet_name_input_page.dart';
 
 class OnboardingPage5 extends StatelessWidget {
   const OnboardingPage5({super.key});
@@ -178,7 +178,7 @@ class OnboardingPage5 extends StatelessWidget {
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => PetHealthDashboard(),
+                  builder: (context) => PetNameInputPage(),
                 ),
               );
             },
