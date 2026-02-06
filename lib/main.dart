@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:pet_diary/pet_name_input_page.dart';
 
-void main() => runApp(MaterialApp(home: PetHealthDashboard()));
+
+void main() => runApp(MaterialApp(home: PetNameInputPage()));
 
 class PetHealthDashboard extends StatelessWidget {
   @override
