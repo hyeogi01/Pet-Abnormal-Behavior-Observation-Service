@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+
 // 온보딩 페이지 경로는 프로젝트 환경에 맞게 유지하세요.
 // import 'package:pet_diary/discription/onboarding_page.dart';
 import 'package:pet_diary/mainPage/odd_pet.dart';
+import 'package:pet_diary/mainPage/daily_pet.dart';
+
 void main() {
   runApp(const MaterialApp(
     home: PetHealthDashboard(),
@@ -52,7 +55,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
         backgroundColor: Colors.white,
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
-        selectedItemColor: Colors.amber[700], // 현재 페이지 노란색(강조)
+        selectedItemColor: Colors.green[700], // 현재 페이지 노란색(강조)
         unselectedItemColor: Colors.grey[400],
         selectedFontSize: 11,
         unselectedFontSize: 11,
@@ -79,7 +82,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
           Row(
             children: [
               _buildActionButton(Icons.book, '일상 일기', '기분 & 활동량', Colors.blue,
-                      () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PageA()))),
+                      () => Navigator.push(context, MaterialPageRoute(builder: (context) => daily_pet()))),
               const SizedBox(width: 12),
               _buildActionButton(Icons.error_outline, '이상 행동', '건강 체크', Colors.orange,
                       () => Navigator.push(context, MaterialPageRoute(builder: (context) => PageB()))),
@@ -219,7 +222,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
               ],
             ),
           ),
-          const Icon(Icons.sentiment_satisfied_alt, color: Colors.orange),
+          const Icon(Icons.sentiment_satisfied_alt, color: Colors.lightGreen),
         ],
       ),
     );
