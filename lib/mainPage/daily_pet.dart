@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:pet_diary/mainPage/pet_activity.dart';
 
 class daily_pet extends StatelessWidget {
   const daily_pet({super.key});
@@ -236,7 +237,7 @@ class daily_pet extends StatelessWidget {
           // pet_activity 페이지로 이동
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => const pet_activity()),
+            MaterialPageRoute(builder: (context) => PetActivityPage()),
           );
         },
         style: ElevatedButton.styleFrom(
@@ -247,14 +248,5 @@ class daily_pet extends StatelessWidget {
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
     );
-  }
-}
-
-// 이동 테스트를 위한 pet_activity 임시 클래스 (별도 파일이 있다면 삭제)
-class pet_activity extends StatelessWidget {
-  const pet_activity({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(appBar: AppBar(title: const Text('활동량 & 비만도 분석')));
   }
 }
