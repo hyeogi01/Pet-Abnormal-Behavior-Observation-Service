@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:pet_diary/mainPage/total_diary.dart';
 import 'package:pet_diary/mainPage/odd_pet.dart';
 import 'package:pet_diary/mainPage/daily_pet.dart';
+import 'package:pet_diary/discription/onboarding_page.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 void main() {
   runApp(const MaterialApp(
@@ -20,6 +23,37 @@ class PetHealthDashboard extends StatefulWidget {
 class _PetHealthDashboardState extends State<PetHealthDashboard> {
   // 현재 선택된 메뉴 인덱스 (기본값 홈 = 2)
   int _selectedIndex = 2;
+  List<dynamic> serverLogs = [];
+  bool isLoading = true; // 로딩 상태 확인용
+
+  @override
+  void initState() {
+    super.initState();
+    fetchLogs(); // 화면이 로드될 때 데이터를 가져옵니다.
+  }
+  Future<void> fetchLogs() async {
+    final url = Uri.parse('http://localhost:8000/logs/');
+
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> decodedData = json.decode(response.body);
+        setState(() {
+          if (response.body != 'null') { // 데이터가 있는 경우
+            final Map<String, dynamic> decodedData = json.decode(response.body);
+            // Map의 값(Value)들만 뽑아서 리스트로 만듭니다.
+            serverLogs = decodedData.values.toList().reversed.toList();
+          } else {
+            serverLogs = [];
+          }
+          isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('연결 실패: $e');
+      setState(() => isLoading = false);
+    }
+  }
 
   // 하단 탭 클릭 시 상태 변경 함수
   void _onItemTapped(int index) {
@@ -114,9 +148,23 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
             ],
           ),
           const SizedBox(height: 12),
-          _buildDiaryItem('2026년 2월 6일', '목요일', 85, true),
-          _buildDiaryItem('2026년 2월 5일', '수요일', 72, false),
-          _buildDiaryItem('2026년 2월 4일', '화요일', 90, false),
+          isLoading
+              ? const Center(child: CircularProgressIndicator()) // 로딩 중이면 뱅글뱅글
+              : serverLogs.isEmpty
+              ? const Center(child: Text('서버에 저장된 기록이 없습니다.')) // 데이터가 없으면 메시지
+              : Column(
+            children: serverLogs.take(3).map((log) { // 최근 3개만 표시
+              // Firebase 데이터 구조에 맞춰서 매핑
+              return _buildDiaryItem(
+                  log['timestamp'] ?? '날짜 없음',
+                  log['pet_name'] ?? '콩이',
+                  85, // 활동량 예시
+                  log['behavior'] != '정상' // '정상'이 아닐 때만 주의사항 배지 표시
+              );
+            }).toList(),
+          ),
+          // ------------------------------------------
+
           const SizedBox(height: 24),
           _buildTrendSection(),
           const SizedBox(height: 32),
