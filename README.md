@@ -21,3 +21,8 @@
     - https://www.kaggle.com/datasets/ziadelhussein/dog-disease-sound-dataset
     - https://www.kaggle.com/datasets/yagtapandeya/cat-sound-classification-dataset
     - https://www.kaggle.com/datasets/abdullahshoukat/cat-dog-sounds
+- 이상 질환
+    - https://aihub.or.kr/aihubdata/data/view.do?pageIndex=3&currMenu=115&topMenu=100&srchOptnCnd=OPTNCND001&searchKeyword=%EB%8F%99%EB%AC%BC&srchDetailCnd=DETAILCND001&srchOrder=ORDER001&srchPagePer=20&aihubDataSe=data&dataSetSn=561
+    - https://aihub.or.kr/aihubdata/data/view.do?pageIndex=3&currMenu=115&topMenu=100&srchOptnCnd=OPTNCND001&searchKeyword=%EB%8F%99%EB%AC%BC&srchDetailCnd=DETAILCND001&srchOrder=ORDER001&srchPagePer=20&aihubDataSe=data&dataSetSn=562
+    - https://aihub.or.kr/aihubdata/data/view.do?pageIndex=1&currMenu=115&topMenu=100&srchOptnCnd=OPTNCND001&searchKeyword=%EA%B0%95%EC%95%84%EC%A7%80&srchDetailCnd=DETAILCND001&srchOrder=ORDER001&srchPagePer=20&aihubDataSe=data&dataSetSn=71878
+    - https://aihub.or.kr/aihubdata/data/view.do?pageIndex=1&currMenu=115&topMenu=100&srchOptnCnd=OPTNCND001&searchKeyword=%EB%8F%99%EB%AC%BC&srchDetailCnd=DETAILCND001&srchOrder=ORDER001&srchPagePer=20&aihubDataSe=data&dataSetSn=71520
