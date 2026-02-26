@@ -1,16 +1,17 @@
 import os
 import gc
 import random
+import shutil
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision.models as models
 import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 
 from PIL import Image, ImageFile
 from torch.utils.data import Dataset, DataLoader
 from torch.cuda.amp import autocast, GradScaler
+from torchvision.models import efficientnet_b3, EfficientNet_B3_Weights
 from collections import defaultdict
 from tqdm import tqdm
 
@@ -24,18 +25,21 @@ SEED = 42
 random.seed(SEED)
 torch.manual_seed(SEED)
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 EPOCHS                = 50
 BATCH_SIZE            = 32
 NUM_WORKERS           = 24
 LR                    = 1e-4
-NUM_IMAGES_PER_SAMPLE = 5      # 사용자가 업로드하는 사진 수
+NUM_IMAGES_PER_SAMPLE = 5
 LABEL_SMOOTHING       = 0.1
 
 # train 80% / val 10% / test 10%
 VAL_RATIO  = 0.1
 TEST_RATIO = 0.1
+
+# test 파일이 물리적으로 복사될 작업 디렉토리
+WORK_DIR = "files/work/abnormal_dataset"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CLASS DEFINITIONS
@@ -61,10 +65,6 @@ EYES_CLASSES = [
     "dog_안검종양", "dog_유루증", "dog_핵경화",
 ]
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 유사 클래스 그룹 정의 (Eyes 전용)
-# 동일 질환 내 세분류는 Hierarchical Loss 가중치로 혼동 패널티를 줌
-# ─────────────────────────────────────────────────────────────────────────────
 EYES_SIMILAR_GROUPS = [
     ["dog_비궤양성각막질환_상", "dog_비궤양성각막질환_하"],
     ["dog_궤양성각막질환_상",   "dog_궤양성각막질환_하"],
@@ -103,7 +103,6 @@ class HierarchicalWeightedLoss(nn.Module):
         self.class_names   = class_names
         self.name_to_idx   = {n: i for i, n in enumerate(class_names)}
 
-        # 유사 그룹 → (idx_i, idx_j) pair set
         self.penalty_pairs = set()
         if similar_groups:
             for group in similar_groups:
@@ -119,13 +118,11 @@ class HierarchicalWeightedLoss(nn.Module):
         B, C   = logits.shape
         device = logits.device
 
-        # ── Label Smoothing ──
         log_prob    = F.log_softmax(logits, dim=-1)
-        smooth_loss = -log_prob.mean(dim=-1)                                               # (B,)
-        nll_loss    = F.nll_loss(log_prob, targets, weight=self.weight, reduction="none")  # (B,)
-        base_loss   = (1 - self.smoothing) * nll_loss + self.smoothing * smooth_loss       # (B,)
+        smooth_loss = -log_prob.mean(dim=-1)
+        nll_loss    = F.nll_loss(log_prob, targets, weight=self.weight, reduction="none")
+        base_loss   = (1 - self.smoothing) * nll_loss + self.smoothing * smooth_loss
 
-        # ── Hierarchical Penalty ──
         if self.penalty_pairs:
             pred_classes = logits.argmax(dim=-1)
             penalty_mask = torch.ones(B, device=device)
@@ -147,29 +144,57 @@ def compute_class_weights(sample_counts: dict, class_names: list) -> torch.Tenso
     """Inverse-frequency 방식으로 클래스 가중치를 계산한다."""
     counts  = torch.tensor([sample_counts.get(n, 1) for n in class_names], dtype=torch.float)
     weights = 1.0 / counts
-    weights = weights / weights.sum() * len(class_names)   # normalize
+    weights = weights / weights.sum() * len(class_names)
     return weights
 
 
 # ===============================
 # MODEL DEFINITIONS
+# [변경] ResNet50 → EfficientNet-B3
+#   - feat_dim: 2048 → 1536
+#   - SE Attention은 Eyes backbone에 그대로 유지
+#   - head 구조 유지 (in_features만 1536으로 변경)
 # ===============================
+
+def _efficientnet_b3_backbone():
+    """EfficientNet-B3 backbone 생성. classifier를 Identity로 교체하고 feat_dim 반환."""
+    backbone    = efficientnet_b3(weights=EfficientNet_B3_Weights.IMAGENET1K_V1)
+    feat_dim    = backbone.classifier[1].in_features  # 1536
+    backbone.classifier = nn.Identity()
+    return backbone, feat_dim
+
+
+class SqueezeExcitation(nn.Module):
+    """1-D Squeeze-Excitation for feature vectors (after global avg pool)."""
+
+    def __init__(self, channels: int, reduction: int = 16):
+        super().__init__()
+        self.se = nn.Sequential(
+            nn.Linear(channels, channels // reduction, bias=False),
+            nn.ReLU(),
+            nn.Linear(channels // reduction, channels, bias=False),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * self.se(x)
+
 
 class AnomalyMultiBackbone(nn.Module):
     """
     이상 증상 Omni 모델
-    ├── skin_backbone  → Skin 분류 (피부질환)
-    └── eyes_backbone  → Eyes 분류 (안구질환)
+    ├── skin_backbone  → Skin 분류 (피부질환)   — EfficientNet-B3
+    └── eyes_backbone  → Eyes 분류 (안구질환)   — EfficientNet-B3 + SE Attention
+
+    [변경] backbone: ResNet50(feat=2048) → EfficientNet-B3(feat=1536)
+    [유지] SE Attention (Eyes), Hierarchical head 구조, Dropout 비율
     """
 
     def __init__(self, num_skin_classes: int, num_eyes_classes: int):
         super().__init__()
 
-        # ── Skin Backbone (ResNet50 pretrained) ──────────────────────────────
-        skin_base          = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
-        skin_feat_dim      = skin_base.fc.in_features   # 2048
-        skin_base.fc       = nn.Identity()
-        self.skin_backbone = skin_base
+        # ── Skin Backbone (EfficientNet-B3) ──────────────────────────────────
+        self.skin_backbone, skin_feat_dim = _efficientnet_b3_backbone()   # feat: 1536
         self.skin_head = nn.Sequential(
             nn.Linear(skin_feat_dim, 512),
             nn.BatchNorm1d(512),
@@ -178,12 +203,9 @@ class AnomalyMultiBackbone(nn.Module):
             nn.Linear(512, num_skin_classes),
         )
 
-        # ── Eyes Backbone (ResNet50 pretrained + SE attention) ───────────────
-        eyes_base          = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
-        eyes_feat_dim      = eyes_base.fc.in_features
-        eyes_base.fc       = nn.Identity()
-        self.eyes_backbone = eyes_base
-        self.eyes_se       = SqueezeExcitation(eyes_feat_dim, reduction=16)
+        # ── Eyes Backbone (EfficientNet-B3 + SE Attention) ───────────────────
+        self.eyes_backbone, eyes_feat_dim = _efficientnet_b3_backbone()   # feat: 1536
+        self.eyes_se   = SqueezeExcitation(eyes_feat_dim, reduction=16)   # SE 유지
         self.eyes_head = nn.Sequential(
             nn.Linear(eyes_feat_dim, 1024),
             nn.BatchNorm1d(1024),
@@ -205,22 +227,6 @@ class AnomalyMultiBackbone(nn.Module):
             return self.eyes_head(feat)
         else:
             raise ValueError(f"Unknown task: {task!r}. Choose 'skin' or 'eyes'.")
-
-
-class SqueezeExcitation(nn.Module):
-    """1-D Squeeze-Excitation for feature vectors (after global avg pool)."""
-
-    def __init__(self, channels: int, reduction: int = 16):
-        super().__init__()
-        self.se = nn.Sequential(
-            nn.Linear(channels, channels // reduction, bias=False),
-            nn.ReLU(),
-            nn.Linear(channels // reduction, channels, bias=False),
-            nn.Sigmoid(),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x * self.se(x)
 
 
 # ===============================
@@ -274,34 +280,45 @@ def predict_anomaly(
 
 
 # ===============================
-# DATA SPLIT UTILITY
+# DATA SPLIT & COPY UTILITY
+# [변경] seed 재현 방식 → 파일을 WORK_DIR에 물리적으로 복사
+#   - test set이 OS 환경·파일 추가·seed 변경에 영향받지 않음
+#   - test 파일은 WORK_DIR/test/{task}/{class}/ 에 보존됨
 # ===============================
 
-def collect_and_split(
+def _task_ready(task_name: str) -> bool:
+    """해당 task의 train 폴더가 존재하고 비어있지 않으면 True."""
+    task_train = os.path.join(WORK_DIR, "train", task_name)
+    return os.path.isdir(task_train) and len(os.listdir(task_train)) > 0
+
+
+def collect_copy_split(
     root_dir: str,
+    task_name: str,
     class_names: list,
     val_ratio: float  = VAL_RATIO,
     test_ratio: float = TEST_RATIO,
     seed: int         = SEED,
-):
+) -> tuple:
     """
     root_dir 하위 class 디렉토리에서 이미지를 수집하고
-    클래스별 stratified split으로 train / val / test 를 반환한다.
+    클래스별 stratified split 후 WORK_DIR에 파일을 물리적으로 복사한다.
 
     [데이터 누수 방지]
     - 파일 경로 중복 제거 (seen set)
     - 클래스별로 독립 shuffle 후 비율 분리
-      → train / val / test 간 동일 파일 절대 미포함
+    - split 결과를 디스크에 고정 → OS·seed 변경에 영향 없음
 
     Returns:
-        train_samples, val_samples, test_samples
-        각 원소: (img_path: str, label_idx: int)
+        train_samples, val_samples
+        각 원소: (img_path: str, label_idx: int)  ← WORK_DIR 내 복사된 경로
     """
     rng         = random.Random(seed)
     name_to_idx = {n: i for i, n in enumerate(class_names)}
     class_files = defaultdict(list)
     seen_paths  = set()
 
+    # 파일 수집 + 중복 제거
     for class_name in class_names:
         class_dir = os.path.join(root_dir, class_name)
         if not os.path.isdir(class_dir):
@@ -311,31 +328,51 @@ def collect_and_split(
             if not fname.lower().endswith((".jpg", ".jpeg", ".png")):
                 continue
             fpath = os.path.join(class_dir, fname)
-            if fpath in seen_paths:      # 중복 파일 제거
+            if fpath in seen_paths:
                 continue
             seen_paths.add(fpath)
             class_files[label_idx].append(fpath)
 
-    train_samples, val_samples, test_samples = [], [], []
+    # split 디렉토리 생성
+    for split in ["train", "val", "test"]:
+        for class_name in class_names:
+            os.makedirs(os.path.join(WORK_DIR, split, task_name, class_name), exist_ok=True)
+
+    train_samples, val_samples = [], []
 
     for label_idx, paths in class_files.items():
+        class_name = class_names[label_idx]
         rng.shuffle(paths)
         n       = len(paths)
         n_val   = max(1, int(n * val_ratio))
         n_test  = max(1, int(n * test_ratio))
         n_train = n - n_val - n_test
 
-        # 샘플 수가 너무 적은 클래스 경고
         if n_train <= 0:
-            print(f"  ⚠️  클래스 idx={label_idx}: 샘플 수({n})가 너무 적어 train이 0개입니다.")
+            print(f"  ⚠️  '{class_name}': 샘플 수({n})가 너무 적어 train이 0개입니다.")
             n_train, n_val, n_test = n, 0, 0
 
-        train_samples.extend([(p, label_idx) for p in paths[:n_train]])
-        val_samples.extend(  [(p, label_idx) for p in paths[n_train:n_train + n_val]])
-        test_samples.extend( [(p, label_idx) for p in paths[n_train + n_val:]])
+        split_map = {
+            "train": paths[:n_train],
+            "val"  : paths[n_train:n_train + n_val],
+            "test" : paths[n_train + n_val:],
+        }
 
-    print(f"  → train: {len(train_samples)} | val: {len(val_samples)} | test: {len(test_samples)}")
-    return train_samples, val_samples, test_samples
+        for split_name, split_paths in split_map.items():
+            dst_dir = os.path.join(WORK_DIR, split_name, task_name, class_name)
+            for src in tqdm(split_paths, desc=f"  copy {task_name}/{split_name}/{class_name}", leave=False):
+                dst = os.path.join(dst_dir, os.path.basename(src))
+                if not os.path.exists(dst):
+                    shutil.copy2(src, dst)
+                # WORK_DIR 내 복사된 경로로 samples 구성
+                if split_name == "train":
+                    train_samples.append((dst, label_idx))
+                elif split_name == "val":
+                    val_samples.append((dst, label_idx))
+
+    print(f"  → {task_name}: train {len(train_samples)} | val {len(val_samples)}"
+          f" | test 파일 → {os.path.join(WORK_DIR, 'test', task_name)}/")
+    return train_samples, val_samples
 
 
 def count_samples_from_split(samples: list, class_names: list) -> dict:
@@ -353,8 +390,6 @@ def count_samples_from_split(samples: list, class_names: list) -> dict:
 
 class AnomalyDataset(Dataset):
     """
-    collect_and_split() 결과를 받아 Dataset으로 래핑한다.
-
     samples  : [(img_path, label_idx), ...]
     is_train : True  → augmentation 적용
                False → resize only (val / test)
@@ -401,15 +436,37 @@ def train(
     skin_classes = SKIN_CLASSES
     eyes_classes = EYES_CLASSES
 
-    # ── Train / Val / Test Split ───────────────────────────────────────────────
-    # 클래스별 stratified split → 누수 없음
-    print("\n📦 Splitting Skin dataset...")
-    skin_train_samples, skin_val_samples, _ = collect_and_split(skin_root, skin_classes)
+    # ── Dataset Preparation (최초 1회만 실행) ─────────────────────────────────
+    # 파일을 WORK_DIR에 물리적으로 복사해 test set을 고정
+    if _task_ready("skin"):
+        print("✅ skin already prepared, loading sample lists from WORK_DIR...")
+        skin_train_samples = _load_samples_from_dir(
+            os.path.join(WORK_DIR, "train", "skin"), skin_classes
+        )
+        skin_val_samples = _load_samples_from_dir(
+            os.path.join(WORK_DIR, "val", "skin"), skin_classes
+        )
+    else:
+        print("\n📦 Splitting & Copying Skin dataset...")
+        skin_train_samples, skin_val_samples = collect_copy_split(
+            skin_root, "skin", skin_classes
+        )
 
-    print("\n📦 Splitting Eyes dataset...")
-    eyes_train_samples, eyes_val_samples, _ = collect_and_split(eyes_root, eyes_classes)
+    if _task_ready("eyes"):
+        print("✅ eyes already prepared, loading sample lists from WORK_DIR...")
+        eyes_train_samples = _load_samples_from_dir(
+            os.path.join(WORK_DIR, "train", "eyes"), eyes_classes
+        )
+        eyes_val_samples = _load_samples_from_dir(
+            os.path.join(WORK_DIR, "val", "eyes"), eyes_classes
+        )
+    else:
+        print("\n📦 Splitting & Copying Eyes dataset...")
+        eyes_train_samples, eyes_val_samples = collect_copy_split(
+            eyes_root, "eyes", eyes_classes
+        )
 
-    # ── 클래스 가중치: train split 기준으로만 계산 (val/test 정보 누수 방지) ──
+    # ── 클래스 가중치: train split 기준으로만 계산 ────────────────────────────
     skin_train_counts = count_samples_from_split(skin_train_samples, skin_classes)
     eyes_train_counts = count_samples_from_split(eyes_train_samples, eyes_classes)
 
@@ -436,7 +493,6 @@ def train(
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
     scaler    = GradScaler()
 
-    # ── 학습 기록 & Best 추적 ──────────────────────────────────────────────────
     history      = []
     best_avg_acc = 0.0
     best_epoch   = 0
@@ -447,9 +503,7 @@ def train(
         print(f"Epoch {epoch + 1}/{EPOCHS}")
         print(f"{'='*55}")
 
-        # ──────────────────────────────────────────────────────────────────────
-        # 1. Skin Training
-        # ──────────────────────────────────────────────────────────────────────
+        # ── 1. Skin Training ──────────────────────────────────────────────────
         print("\n[Train 1/2] Skin")
         model.train()
 
@@ -481,9 +535,7 @@ def train(
         del skin_train_ds, skin_train_loader
         gc.collect(); torch.cuda.empty_cache()
 
-        # ──────────────────────────────────────────────────────────────────────
-        # 2. Eyes Training
-        # ──────────────────────────────────────────────────────────────────────
+        # ── 2. Eyes Training ──────────────────────────────────────────────────
         print("\n[Train 2/2] Eyes")
 
         eyes_train_ds     = AnomalyDataset(eyes_train_samples, is_train=True)
@@ -514,16 +566,12 @@ def train(
         del eyes_train_ds, eyes_train_loader
         gc.collect(); torch.cuda.empty_cache()
 
-        # LR Scheduler Step
         scheduler.step()
 
-        # ──────────────────────────────────────────────────────────────────────
-        # 3. Validation  ← [수정] 추가: val acc 기준으로 best model 저장
-        # ──────────────────────────────────────────────────────────────────────
+        # ── 3. Validation ─────────────────────────────────────────────────────
         print("\n[Val] Skin & Eyes")
         model.eval()
 
-        # Skin Val
         skin_val_ds     = AnomalyDataset(skin_val_samples, is_train=False)
         skin_val_loader = DataLoader(
             skin_val_ds, batch_size=BATCH_SIZE, shuffle=False,
@@ -548,7 +596,6 @@ def train(
         del skin_val_ds, skin_val_loader
         gc.collect(); torch.cuda.empty_cache()
 
-        # Eyes Val
         eyes_val_ds     = AnomalyDataset(eyes_val_samples, is_train=False)
         eyes_val_loader = DataLoader(
             eyes_val_ds, batch_size=BATCH_SIZE, shuffle=False,
@@ -573,7 +620,6 @@ def train(
         del eyes_val_ds, eyes_val_loader
         gc.collect(); torch.cuda.empty_cache()
 
-        # ── 결과 출력 ──────────────────────────────────────────────────────────
         avg_val_acc = (skin_val_acc + eyes_val_acc) / 2
 
         print(f"\n📊 Epoch {epoch+1} Results:")
@@ -583,7 +629,6 @@ def train(
               f"  │  Val Loss: {eyes_val_loss:.4f}  Acc: {eyes_val_acc*100:.2f}%")
         print(f"  Avg Val Acc: {avg_val_acc*100:.2f}%")
 
-        # ── History 기록 ────────────────────────────────────────────────────────
         history.append({
             'epoch'          : epoch + 1,
             'skin_train_loss': skin_train_loss,
@@ -597,9 +642,6 @@ def train(
             'avg_val_acc'    : avg_val_acc,
         })
 
-        # ── Best Model 저장: val acc 기준 ─────────────────────────────────────
-        # [수정] 기존: train acc 기준 → 과적합 모델이 저장될 위험
-        #        변경: val acc 기준  → 실제 일반화 성능이 가장 좋은 모델 저장
         if avg_val_acc > best_avg_acc:
             best_avg_acc = avg_val_acc
             best_epoch   = epoch + 1
@@ -610,6 +652,7 @@ def train(
                     "best_avg_acc" : best_avg_acc,
                     "skin_classes" : SKIN_CLASSES,
                     "eyes_classes" : EYES_CLASSES,
+                    "work_dir"     : WORK_DIR,   # test 파일은 WORK_DIR/test/ 에 존재
                     "history"      : history,
                 },
                 "pet_abnormal_omni_best.pth",
@@ -618,6 +661,7 @@ def train(
 
     print(f"\n🏆 Training Finished.")
     print(f"   Best Epoch: {best_epoch} | Best Val Avg Acc: {best_avg_acc*100:.2f}%")
+    print(f"   Test set 위치: {os.path.join(WORK_DIR, 'test')}/")
 
     # ── 학습 곡선 시각화 ──────────────────────────────────────────────────────
     print("\n📈 Generating training history plot...")
@@ -635,7 +679,6 @@ def train(
 
     fig, axes = plt.subplots(1, 3, figsize=(20, 5))
 
-    # ─ Loss ─
     axes[0].plot(epochs_x, skin_tr_losses,  'b-',  linewidth=2, label='Skin Train Loss')
     axes[0].plot(epochs_x, skin_val_losses, 'b--', linewidth=2, label='Skin Val Loss')
     axes[0].plot(epochs_x, eyes_tr_losses,  'r-',  linewidth=2, label='Eyes Train Loss')
@@ -644,7 +687,6 @@ def train(
     axes[0].set_title('Loss');    axes[0].set_xlabel('Epoch'); axes[0].set_ylabel('Loss')
     axes[0].legend();             axes[0].grid(True, alpha=0.3)
 
-    # ─ Accuracy ─
     axes[1].plot(epochs_x, skin_tr_accs,  'b-',  linewidth=2, label='Skin Train Acc')
     axes[1].plot(epochs_x, skin_val_accs, 'b--', linewidth=2, label='Skin Val Acc')
     axes[1].plot(epochs_x, eyes_tr_accs,  'r-',  linewidth=2, label='Eyes Train Acc')
@@ -653,7 +695,6 @@ def train(
     axes[1].set_title('Accuracy'); axes[1].set_xlabel('Epoch'); axes[1].set_ylabel('Accuracy')
     axes[1].set_ylim(0, 1);        axes[1].legend();            axes[1].grid(True, alpha=0.3)
 
-    # ─ Avg Val Accuracy ─
     axes[2].plot(epochs_x, avg_val_accs, 'g-', linewidth=2, label='Avg Val Acc')
     axes[2].axvline(best_epoch, color='gray', linestyle=':', alpha=0.7, label=f'Best Epoch {best_epoch}')
     axes[2].axhline(best_avg_acc, color='green', linestyle='--', alpha=0.6,
@@ -666,6 +707,24 @@ def train(
     plt.savefig('anomaly_training_history.png', dpi=150, bbox_inches='tight')
     plt.close()
     print("  ✅ Saved: anomaly_training_history.png")
+
+
+def _load_samples_from_dir(task_dir: str, class_names: list) -> list:
+    """
+    WORK_DIR 하위 task 폴더에서 samples 리스트를 복원한다.
+    (재학습 시 파일 복사를 skip하고 기존 WORK_DIR에서 바로 로드)
+    """
+    name_to_idx = {n: i for i, n in enumerate(class_names)}
+    samples     = []
+    for class_name in sorted(os.listdir(task_dir)):
+        class_dir = os.path.join(task_dir, class_name)
+        if not os.path.isdir(class_dir) or class_name not in name_to_idx:
+            continue
+        label_idx = name_to_idx[class_name]
+        for fname in os.listdir(class_dir):
+            if fname.lower().endswith((".jpg", ".jpeg", ".png")):
+                samples.append((os.path.join(class_dir, fname), label_idx))
+    return samples
 
 
 # ===============================
