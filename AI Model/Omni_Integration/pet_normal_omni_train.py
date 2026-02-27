@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from transformers import Wav2Vec2ForSequenceClassification, Wav2Vec2FeatureExtractor, get_linear_schedule_with_warmup
 import torchvision.transforms as transforms
-from torchvision.models import efficientnet_b3, EfficientNet_B3_Weights
+from torchvision.models import resnet50, ResNet50_Weights
 from PIL import Image, ImageFile
 import librosa
 import numpy as np
@@ -45,7 +45,7 @@ MAX_AUDIO_LEN = SR * 5
 LOSS_WEIGHTS = {
     "behavior": 1.0,
     "emotion":  1.0,
-    "sound":    0.6,
+    "sound":    1.0,  # [FIX v2] 0.6 → 1.0. 다운스케일이 sound 학습 억제 원인이었음.
     "patella":  1.0,
 }
 
@@ -122,14 +122,16 @@ def collect_patella_by_date(root):
                 continue
 
             date_samples = []
-            for direction in ['Back', 'Front', 'Left', 'Right']:
+            # [FIX] 하드코딩된 direction 이름 대신 실제 존재하는 하위 폴더 전체 탐색.
+            # 폴더명 대소문자/철자 차이로 샘플이 조용히 누락되는 문제 방지.
+            for direction in sorted(os.listdir(date_path)):
                 direction_path = os.path.join(date_path, direction)
-                if not os.path.exists(direction_path):
+                if not os.path.isdir(direction_path):
                     continue
                 for filename in os.listdir(direction_path):
                     if filename.lower().endswith('.jpg'):
                         img_path  = os.path.join(direction_path, filename)
-                        json_path = img_path.replace('.jpg', '.json')
+                        json_path = os.path.splitext(img_path)[0] + '.json'  # [FIX] splitext 사용
                         if os.path.exists(json_path):
                             date_samples.append((img_path, json_path))
 
@@ -192,7 +194,7 @@ def split_and_copy_patella(grade_date_map):
                     # 파일명 충돌 방지: grade_dateDir_originalFilename
                     base     = f"{grade}_{date_dir}_{os.path.basename(img_path)}"
                     dst_img  = os.path.join(dst_label_dir, base)
-                    dst_json = dst_img.replace('.jpg', '.json')
+                    dst_json = os.path.splitext(dst_img)[0] + '.json'  # [FIX] splitext 사용
                     shutil.copy(img_path,  dst_img)
                     shutil.copy(json_path, dst_json)
                     total_stats[grade][split_name] += 1
@@ -222,15 +224,32 @@ def sample_balanced(samples):
         print(f"    {label}: {cnt}")
     return samples
 
-def sample_balanced_audio(samples):
-    """샘플링 없이 전체 오디오 데이터 반환. 불균형은 class_weight로 보정."""
-    class_counts = defaultdict(int)
-    for label, _ in samples:
-        class_counts[label] += 1
-    print(f"  📊 {len(class_counts)} classes, total {len(samples)} samples (all used)")
-    for label, cnt in sorted(class_counts.items()):
-        print(f"    {label}: {cnt}")
-    return samples
+def sample_balanced_audio(samples, target_per_class=200):
+    """
+    [FIX v2] 오디오 오버샘플링 적용.
+    - 기존: 전체 반환 (788개 그대로) → pet_sound_train.py 대비 학습 데이터 절대량 부족
+    - 수정: 소수 클래스를 target_per_class까지 random.choices로 오버샘플링
+    - pet_sound_train.py에서 동일 방식으로 150 epoch 기준 90%+ 달성 확인됨.
+    - target_per_class=200: dog_bark(202개) 기준으로 전 클래스 균등화
+    """
+    class_samples = defaultdict(list)
+    for label, path in samples:
+        class_samples[label].append((label, path))
+
+    result = []
+    print(f"  📊 Audio oversampling (target={target_per_class}/class):")
+    for label, items in sorted(class_samples.items()):
+        original_cnt = len(items)
+        if original_cnt < target_per_class:
+            # 부족한 만큼 반복 샘플링 (augmentation 효과)
+            oversampled = random.choices(items, k=target_per_class)
+        else:
+            oversampled = items
+        result.extend(oversampled)
+        print(f"    {label}: {original_cnt} → {len(oversampled)}")
+
+    print(f"  📊 Total after oversampling: {len(result)} samples")
+    return result
 
 
 def _dedup_samples(samples):
@@ -427,20 +446,29 @@ class ImageDataset(Dataset):
 class PatellaDataset(Dataset):
     def __init__(self, task_dir, augment=False):
         self.samples = []
-        self.label_to_id = {}
 
-        for label in sorted(os.listdir(task_dir)):
+        # [FIX v2] Patella grade는 순서가 있는 ordinal 데이터.
+        # sorted()는 문자열 기준 정렬이라 "normal" < "1" < "2"... 이 아닌 임의 순서가 됨.
+        # → 명시적 순서 지정: normal=0, grade1=1, grade2=2, grade3=3, grade4=4
+        # 이 순서를 지키면 인접 grade 혼동 시 패널티가 작아 학습에 유리함.
+        PATELLA_ORDER = ["normal", "1", "2", "3", "4"]
+        available = [d for d in os.listdir(task_dir) if os.path.isdir(os.path.join(task_dir, d))]
+        ordered = [g for g in PATELLA_ORDER if g in available]
+        # PATELLA_ORDER에 없는 미정의 등급은 뒤에 추가 (안전장치)
+        for g in sorted(available):
+            if g not in ordered:
+                ordered.append(g)
+        self.label_to_id = {label: idx for idx, label in enumerate(ordered)}
+
+        # ordered 순서대로 샘플 수집 (label_to_id 순서와 일치 보장)
+        for label in ordered:
             label_dir = os.path.join(task_dir, label)
             if not os.path.isdir(label_dir):
                 continue
-
-            self.label_to_id[label] = len(self.label_to_id)
-
             for file in os.listdir(label_dir):
                 if file.lower().endswith('.jpg'):
-                    img_path = os.path.join(label_dir, file)
-                    json_path = img_path.replace('.jpg', '.json')
-
+                    img_path  = os.path.join(label_dir, file)
+                    json_path = os.path.splitext(img_path)[0] + '.json'
                     if os.path.exists(json_path):
                         self.samples.append((img_path, json_path, label))
 
@@ -469,21 +497,33 @@ class PatellaDataset(Dataset):
         img_path, json_path, label = self.samples[idx]
 
         img = Image.open(img_path).convert("RGB")
+        orig_w, orig_h = img.size  # 정규화를 위해 원본 크기 저장
         img = self.transform(img)
 
         with open(json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
+        # [FIX v2] KP_DIM 27 → 39 으로 수정.
+        # 진단 결과 실제 데이터의 keypoint 수 분포:
+        #   5~13개 혼재, 대부분 12개(99/200건), 최대 13개(1건)
+        # 기존 KP_DIM=27(9개 기준)은 12개 keypoint 샘플의 뒤 9차원(3 keypoints)을
+        # 모두 잘라버려 모델이 불완전한 정보로 학습하는 버그가 있었음.
+        # → 최대값 13개 기준 13×3=39로 확장하여 모든 keypoint를 온전히 사용.
+        # - visibility=1.0: 실제 keypoint, visibility=0.0: 패딩(원점과 구별 가능)
+        # ※ annotation_info 내 키 이름(x, y)이 실제 JSON 스키마와 다를 경우
+        #   아래 .get('x', ...) 부분을 실제 키 이름으로 수정하세요.
+        KP_DIM = 39  # 13 keypoints × 3 (x, y, vis) — 실제 데이터 최대값 기준
         keypoints = []
         for annotation in data.get('annotation_info', []):
-            x = float(annotation.get('x', 0))
-            y = float(annotation.get('y', 0))
-            keypoints.extend([x, y])
+            x = float(annotation.get('x', 0)) / orig_w  # [0, 1] 정규화
+            y = float(annotation.get('y', 0)) / orig_h  # [0, 1] 정규화
+            keypoints.extend([x, y, 1.0])               # visibility = 1 (실제 keypoint)
 
-        while len(keypoints) < 18:
+        # 부족한 자리는 (0, 0, 0) 으로 패딩 → vis=0 이므로 모델이 무시 가능
+        while len(keypoints) < KP_DIM:
             keypoints.append(0.0)
 
-        keypoints = torch.tensor(keypoints[:18], dtype=torch.float32)
+        keypoints = torch.tensor(keypoints[:KP_DIM], dtype=torch.float32)
 
         return img, keypoints, self.label_to_id[label]
 
@@ -546,17 +586,18 @@ def collate_fn_audio(batch):
 # =========================
 # 3. Individual Models
 # =========================
-def _efficientnet_b3_backbone():
-    backbone = efficientnet_b3(weights=EfficientNet_B3_Weights.IMAGENET1K_V1)
-    in_features = backbone.classifier[1].in_features  # 1536
-    backbone.classifier = nn.Identity()
+def _resnet50_backbone():
+    """ResNet50 backbone. fc를 Identity로 교체하고 feat_dim(2048) 반환."""
+    backbone = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
+    in_features = backbone.fc.in_features  # 2048
+    backbone.fc = nn.Identity()
     return backbone, in_features
 
 
 class BehaviorModel(nn.Module):
     def __init__(self, num_classes):
         super().__init__()
-        self.backbone, in_features = _efficientnet_b3_backbone()
+        self.backbone, in_features = _resnet50_backbone()
         self.head = nn.Sequential(
             nn.Dropout(0.3),
             nn.Linear(in_features, num_classes)
@@ -569,7 +610,7 @@ class BehaviorModel(nn.Module):
 class EmotionModel(nn.Module):
     def __init__(self, num_classes):
         super().__init__()
-        self.backbone, in_features = _efficientnet_b3_backbone()
+        self.backbone, in_features = _resnet50_backbone()
         self.head = nn.Sequential(
             nn.Dropout(0.3),
             nn.Linear(in_features, num_classes)
@@ -582,17 +623,35 @@ class EmotionModel(nn.Module):
 class PatellaModel(nn.Module):
     def __init__(self, num_classes):
         super().__init__()
-        self.backbone, in_features = _efficientnet_b3_backbone()
+        self.backbone, in_features = _resnet50_backbone()
+
+        # [FIX v2] keypoint 임베딩 입력 차원: 27 → 39 (x, y, visibility) × 13 keypoints
+        # 진단 결과 실제 데이터 최대 13개 keypoint → KP_DIM=39에 맞춰 수정.
+        # backbone feature(2048)에 묻히지 않도록 별도 임베딩 후 fusion.
+        # ⚠️  PatellaDataset 의 KP_DIM = 39 와 반드시 일치해야 함.
+        KP_INPUT_DIM = 39
+        self.kp_embed = nn.Sequential(
+            nn.Linear(KP_INPUT_DIM, 64),
+            nn.ReLU(),
+            nn.Linear(64, 128),
+            nn.ReLU(),
+        )
+
         self.head = nn.Sequential(
-            nn.Linear(in_features + 18, 256),
+            nn.Linear(in_features + 128, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Dropout(0.4),
+            nn.Linear(512, 256),
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(256, num_classes)
+            nn.Linear(256, num_classes),
         )
 
     def forward(self, x, keypoints):
-        feat = self.backbone(x)
-        return self.head(torch.cat([feat, keypoints], dim=1))
+        feat    = self.backbone(x)
+        kp_feat = self.kp_embed(keypoints)
+        return self.head(torch.cat([feat, kp_feat], dim=1))
 
 
 class AudioModel(nn.Module):
@@ -620,7 +679,7 @@ def mixup_data(x, y, alpha=0.4):
     index = torch.randperm(batch_size).to(x.device)
     mixed_x = lam * x + (1 - lam) * x[index]
     y_a, y_b = y, y[index]
-    return mixed_x, y_a, y_b, lam
+    return mixed_x, y_a, y_b, lam, index
 
 
 def clear_memory():
@@ -666,6 +725,15 @@ def train():
     sound_id_to_label    = temp_s.id_to_label
     patella_label_to_id  = temp_p.label_to_id
 
+    # Behavior class_weight  [FIX] 기존 누락 → 추가 (25 클래스 불균형 보정)
+    behavior_labels_list = [temp_b.label_to_id[label] for _, label in temp_b.samples]
+    behavior_class_weights = compute_class_weight(
+        'balanced',
+        classes=np.arange(len(behavior_label_to_id)),
+        y=behavior_labels_list
+    )
+    behavior_class_weights_tensor = torch.tensor(behavior_class_weights, dtype=torch.float)
+
     # Emotion class_weight
     emotion_labels_list = [temp_e.label_to_id[label] for _, label in temp_e.samples]
     emotion_class_weights = compute_class_weight(
@@ -674,6 +742,17 @@ def train():
         y=emotion_labels_list
     )
     emotion_class_weights_tensor = torch.tensor(emotion_class_weights, dtype=torch.float)
+
+    # Patella class_weight
+    patella_labels_list = [temp_p.label_to_id[label] for _, _, label in temp_p.samples]
+    patella_class_weights = compute_class_weight(
+        'balanced',
+        classes=np.arange(len(patella_label_to_id)),
+        y=patella_labels_list
+    )
+    patella_class_weights = np.clip(patella_class_weights, 0.5, 2.5)  # 극단값 제한
+    patella_class_weights_tensor = torch.tensor(patella_class_weights, dtype=torch.float)
+    print(f"  📊 Patella class weights (clamped): {dict(zip(sorted(patella_label_to_id.keys()), patella_class_weights.round(3)))}")
 
     del temp_b, temp_e, temp_s, temp_p
     clear_memory()
@@ -688,28 +767,48 @@ def train():
     # Optimizers
     behavior_opt = torch.optim.AdamW(behavior_model.parameters(), lr=LR_VIDEO, weight_decay=0.01)
     emotion_opt  = torch.optim.AdamW(emotion_model.parameters(),  lr=LR_VIDEO, weight_decay=0.01)
-    patella_opt  = torch.optim.AdamW(patella_model.parameters(),  lr=LR_VIDEO, weight_decay=0.01)
+    patella_opt  = torch.optim.AdamW(patella_model.parameters(),  lr=1e-4,     weight_decay=0.01)
     audio_opt    = torch.optim.AdamW(audio_model.parameters(),    lr=LR_AUDIO, weight_decay=0.01)
+
+    # Patella LR Scheduler (CosineAnnealing)
+    patella_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        patella_opt, T_max=EPOCHS, eta_min=1e-6
+    )
 
     # Audio LR Warmup Scheduler
     _temp_sound = AudioDataset(os.path.join(WORK_DIR, "train", "sound"), augment=False)
     _approx_sound_steps = (len(_temp_sound) // BATCH_SIZE) * EPOCHS
     del _temp_sound
+    # [FIX] warmup_steps: 100 → 20
+    # sound 데이터는 ~12 배치/epoch 이므로 warmup=100이면 약 8 epoch 동안 LR이
+    # 거의 0에 머물러 초기 epoch 정확도가 고착되는 문제가 있었음.
+    # 20 steps(≈ 1.5 epoch)으로 줄여 빠른 초기 학습을 유도.
     audio_scheduler = get_linear_schedule_with_warmup(
         audio_opt,
-        num_warmup_steps=100,
+        num_warmup_steps=20,
         num_training_steps=_approx_sound_steps
     )
     clear_memory()
 
-    # Scalers
-    video_scaler = torch.amp.GradScaler("cuda")
-    audio_scaler = torch.amp.GradScaler("cuda")
+    # Scalers - 모든 task 독립 (한 task의 inf/nan이 다른 task에 전파되지 않도록)
+    # [FIX] behavior/emotion 공유 video_scaler → 각각 독립 scaler 분리
+    behavior_scaler = torch.amp.GradScaler("cuda")
+    emotion_scaler  = torch.amp.GradScaler("cuda")
+    patella_scaler  = torch.amp.GradScaler("cuda")
+    audio_scaler    = torch.amp.GradScaler("cuda")
 
     # Loss
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    # [FIX] behavior도 class_weight 적용 (기존: 가중치 없음 → 25 클래스 불균형 무보정)
+    criterion = nn.CrossEntropyLoss(
+        weight=behavior_class_weights_tensor.to(DEVICE),
+        label_smoothing=0.1
+    )
     criterion_emotion = nn.CrossEntropyLoss(
         weight=emotion_class_weights_tensor.to(DEVICE),
+        label_smoothing=0.1
+    )
+    criterion_patella = nn.CrossEntropyLoss(
+        weight=patella_class_weights_tensor.to(DEVICE),
         label_smoothing=0.1
     )
 
@@ -736,13 +835,15 @@ def train():
 
             behavior_opt.zero_grad()
             with torch.amp.autocast("cuda"):
-                imgs, labels_a, labels_b, lam = mixup_data(imgs, labels)
+                imgs, labels_a, labels_b, lam, _ = mixup_data(imgs, labels)
                 logits = behavior_model(imgs)
                 loss = lam * criterion(logits, labels_a) + (1 - lam) * criterion(logits, labels_b)
 
-            video_scaler.scale(loss).backward()
-            video_scaler.step(behavior_opt)
-            video_scaler.update()
+            behavior_scaler.scale(loss).backward()
+            behavior_scaler.unscale_(behavior_opt)  # [FIX] 누락된 unscale_ 추가
+            torch.nn.utils.clip_grad_norm_(behavior_model.parameters(), 1.0)  # [FIX] 누락된 grad clip 추가
+            behavior_scaler.step(behavior_opt)
+            behavior_scaler.update()
 
             loss_b += loss.item()
 
@@ -766,15 +867,17 @@ def train():
 
             emotion_opt.zero_grad()
             with torch.amp.autocast("cuda"):
-                imgs, labels_a, labels_b, lam = mixup_data(imgs, labels)
+                imgs, labels_a, labels_b, lam, _ = mixup_data(imgs, labels)
                 logits = emotion_model(imgs)
                 loss = (lam * criterion_emotion(logits, labels_a)
                         + (1 - lam) * criterion_emotion(logits, labels_b))
                 loss = loss * LOSS_WEIGHTS["emotion"]
 
-            video_scaler.scale(loss).backward()
-            video_scaler.step(emotion_opt)
-            video_scaler.update()
+            emotion_scaler.scale(loss).backward()
+            emotion_scaler.unscale_(emotion_opt)  # [FIX] 누락된 unscale_ 추가
+            torch.nn.utils.clip_grad_norm_(emotion_model.parameters(), 1.0)  # [FIX] 누락된 grad clip 추가
+            emotion_scaler.step(emotion_opt)
+            emotion_scaler.update()
 
             loss_e += loss.item()
 
@@ -803,23 +906,27 @@ def train():
 
         sound_loader = make_loader(sound_train, shuffle=True, is_audio=True)
 
+        # [FIX] class_weight 적용 방식 수정.
+        # 기존: outputs.loss(이미 평균된 scalar)에 per_sample_w.mean()을 곱하는 방식
+        #       → loss scale만 흔들릴 뿐 클래스별 가중치가 정확히 반영되지 않음.
+        # 수정: CrossEntropyLoss(weight=...)를 직접 생성해 logits에 적용.
+        criterion_sound = nn.CrossEntropyLoss(weight=class_weights_tensor)
+
         for batch in tqdm(sound_loader, desc="Sound", leave=False):
             audios = batch["input_values"].to(DEVICE)
             labels = batch["labels"].to(DEVICE)
 
             audio_opt.zero_grad()
             with torch.amp.autocast("cuda"):
-                outputs = audio_model(input_values=audios, labels=labels)
-                loss = outputs.loss * LOSS_WEIGHTS["sound"]
-                per_sample_w = class_weights_tensor[labels]
-                loss = loss * per_sample_w.mean()
+                outputs = audio_model(input_values=audios)          # labels 제거 → 내부 loss 미사용
+                loss = criterion_sound(outputs.logits, labels) * LOSS_WEIGHTS["sound"]
 
             audio_scaler.scale(loss).backward()
             audio_scaler.unscale_(audio_opt)
             torch.nn.utils.clip_grad_norm_(audio_model.parameters(), 1.0)
             audio_scaler.step(audio_opt)
             audio_scaler.update()
-            audio_scheduler.step()
+            audio_scheduler.step()  # optimizer.step() 이후 호출 (순서 경고 수정)
 
             loss_s += loss.item()
 
@@ -843,18 +950,22 @@ def train():
 
             patella_opt.zero_grad()
             with torch.amp.autocast("cuda"):
-                imgs, labels_a, labels_b, lam = mixup_data(imgs, labels)
-                logits = patella_model(imgs, keypoints)
-                loss = lam * criterion(logits, labels_a) + (1 - lam) * criterion(logits, labels_b)
+                imgs, labels_a, labels_b, lam, index = mixup_data(imgs, labels)
+                mixed_kp = lam * keypoints + (1 - lam) * keypoints[index]  # keypoints도 동일 index로 mix
+                logits = patella_model(imgs, mixed_kp)
+                loss = lam * criterion_patella(logits, labels_a) + (1 - lam) * criterion_patella(logits, labels_b)
 
-            video_scaler.scale(loss).backward()
-            video_scaler.step(patella_opt)
-            video_scaler.update()
+            patella_scaler.scale(loss).backward()
+            patella_scaler.unscale_(patella_opt)
+            torch.nn.utils.clip_grad_norm_(patella_model.parameters(), 1.0)
+            patella_scaler.step(patella_opt)
+            patella_scaler.update()
 
             loss_p += loss.item()
 
         loss_p /= len(patella_loader)
-        print(f"  → Avg Loss: {loss_p:.4f}")
+        patella_scheduler.step()
+        print(f"  → Avg Loss: {loss_p:.4f} | LR: {patella_scheduler.get_last_lr()[0]:.2e}")
 
         patella_model.cpu()
         del patella_train, patella_loader
@@ -965,18 +1076,19 @@ def train():
         if avg_acc > best_avg_acc:
             best_avg_acc = avg_acc
             torch.save({
-                "behavior_model":       behavior_model.state_dict(),
-                "emotion_model":        emotion_model.state_dict(),
-                "audio_model":          audio_model.state_dict(),
-                "patella_model":        patella_model.state_dict(),
-                "behavior_label_to_id": behavior_label_to_id,
-                "emotion_label_to_id":  emotion_label_to_id,
-                "sound_label_to_id":    sound_label_to_id,
-                "sound_id_to_label":    sound_id_to_label,
-                "patella_label_to_id":  patella_label_to_id,
-                "best_epoch":           epoch + 1,
-                "best_acc":             best_avg_acc,
-                "history":              history,
+                "behavior_model":           behavior_model.state_dict(),
+                "emotion_model":            emotion_model.state_dict(),
+                "audio_model":              audio_model.state_dict(),
+                "patella_model":            patella_model.state_dict(),
+                "behavior_label_to_id":     behavior_label_to_id,
+                "emotion_label_to_id":      emotion_label_to_id,
+                "sound_label_to_id":        sound_label_to_id,
+                "sound_id_to_label":        sound_id_to_label,
+                "patella_label_to_id":      patella_label_to_id,
+                "patella_scheduler":        patella_scheduler.state_dict(),
+                "best_epoch":               epoch + 1,
+                "best_acc":                 best_avg_acc,
+                "history":                  history,
             }, "pet_normal_omni_best.pth")
             print(f"  💾 Saved new best model! (Acc: {best_avg_acc:.4f})")
 
@@ -1007,9 +1119,9 @@ def train():
 
     plt.suptitle('Pet Normal Omni Model Training History', fontsize=14, fontweight='bold')
     plt.tight_layout()
-    plt.savefig('pet_omni_sequential_history.png', dpi=150, bbox_inches='tight')
+    plt.savefig('pet_normal_omni_history.png', dpi=150, bbox_inches='tight')
     plt.close()
-    print("  ✅ Saved: pet_omni_sequential_history.png")
+    print("  ✅ Saved: pet_normal_omni_history.png")
 
     print(f"\n🎉 Training Finished!")
     print(f"  Best Average Acc: {best_avg_acc:.4f} ({best_avg_acc*100:.1f}%)")
