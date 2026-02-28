@@ -3,7 +3,8 @@
 import os
 from collections import defaultdict
 
-root = "files/5_Animal_Eyes"  # 현재 폴더
+root = "/files/3_Animal_Sound"  # 현재 폴더
+
 class_counts = defaultdict(int)
 
 for class_dir in os.listdir(root):
