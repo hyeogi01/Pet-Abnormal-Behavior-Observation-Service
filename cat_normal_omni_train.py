@@ -41,8 +41,8 @@ WORK_DIR      = "files/work/cat_normal_dataset"
 
 DEVICE      = "cuda:0" if torch.cuda.is_available() else "cpu"
 EPOCHS      = 100
-BATCH_SIZE  = 32          # EfficientNet 384px → VRAM 고려
-NUM_WORKERS = 12
+BATCH_SIZE  = 64          # EfficientNet 384px → VRAM 고려
+NUM_WORKERS = 24
 SR          = 16000
 MAX_AUDIO_LEN = SR * 5
 
@@ -55,6 +55,11 @@ LR_AUDIO    = 1e-5
 FREEZE_EPOCHS = 5
 LABEL_SMOOTHING = 0.1
 AUDIO_MODEL_NAME = "facebook/wav2vec2-base"
+
+# [FIX-SOUND] 오디오 전용 배치 크기
+# BATCH_SIZE=64로 425샘플 처리 시 epoch당 배치 6개뿐 (drop_last로 25개 버림)
+# → 16으로 낮춰 epoch당 26 배치로 4배 이상 gradient update 확보
+AUDIO_BATCH_SIZE = 16
 
 print(f"🐱 Cat Normal Omni | Device: {DEVICE}")
 FEATURE_EXTRACTOR = Wav2Vec2FeatureExtractor.from_pretrained(AUDIO_MODEL_NAME)
@@ -77,14 +82,33 @@ CAT_SOUND_CLASSES = [
 
 # ─────────────────────────────── AUGMENTATION ─────────────────────────────────
 def augment_audio(waveform, p=0.7):
+    """
+    [FIX-SOUND] librosa pitch_shift / time_stretch 완전 제거.
+
+    근거:
+      librosa FFT 계열 함수는 DataLoader multiprocessing fork worker 내에서
+      내부 스레드 상태 충돌로 수치 불안정 유발.
+      → val acc가 Ep7(59%)→Ep8(53%)처럼 급락하는 원인.
+
+    대체: 모두 numpy 연산만 사용 (worker 내 완전 안전)
+      1. Speed perturbation : 선형 보간으로 0.88~1.14배 속도 변환 (pitch 무변화)
+      2. Gaussian noise      : SNR 약 25~30dB 수준의 약한 백색 잡음
+      3. Amplitude scaling   : 음량 ±25% 랜덤 조절
+    """
     if random.random() > p:
         return waveform
-    waveform = librosa.effects.pitch_shift(waveform, sr=SR, n_steps=random.uniform(-2, 2))
-    rate = random.uniform(0.85, 1.15)
-    stretched = librosa.effects.time_stretch(waveform, rate=rate)
-    stretched = stretched[:MAX_AUDIO_LEN] if len(stretched) > MAX_AUDIO_LEN \
-                else np.pad(stretched, (0, MAX_AUDIO_LEN - len(stretched)))
-    waveform = stretched * 0.99 + np.random.normal(0, 0.003, len(stretched))
+    # 1. Speed perturbation (librosa time_stretch 대체)
+    speed   = random.uniform(0.88, 1.14)
+    new_len = max(1, int(len(waveform) / speed))
+    indices = np.linspace(0, len(waveform) - 1, new_len)
+    waveform = np.interp(indices, np.arange(len(waveform)), waveform).astype(np.float32)
+    # 길이 고정
+    waveform = (waveform[:MAX_AUDIO_LEN] if len(waveform) > MAX_AUDIO_LEN
+                else np.pad(waveform, (0, MAX_AUDIO_LEN - len(waveform))).astype(np.float32))
+    # 2. Gaussian noise
+    waveform = waveform + np.random.normal(0, 0.004, len(waveform)).astype(np.float32)
+    # 3. Amplitude scaling
+    waveform = waveform * random.uniform(0.75, 1.25)
     return waveform
 
 # ─────────────────────────────── TRANSFORMS ───────────────────────────────────
@@ -267,18 +291,21 @@ def prepare_datasets():
     if not _task_ready("sound", CAT_SOUND_CLASSES):
         print("📦 Preparing sound (cat)...")
         # cat 음성 극소 (55개 합계) → 강한 오버샘플링
-        collect_and_split(SOUND_ROOT, "sound", CAT_SOUND_CLASSES, oversample_min=150)
+        # [FIX-SOUND] 150→300: AUDIO_BATCH_SIZE=16 기준 epoch당 37배치 확보
+        collect_and_split(SOUND_ROOT, "sound", CAT_SOUND_CLASSES, oversample_min=300)
     else: print("✅ sound ready")
 
 # ──────────────────────────────── HELPERS ─────────────────────────────────────
 def make_loader(ds, shuffle, is_audio=False, is_train=True):
+    # [FIX-SOUND] 오디오는 AUDIO_BATCH_SIZE(16) 사용: 25→26 배치/epoch
+    batch   = AUDIO_BATCH_SIZE if is_audio else BATCH_SIZE
     workers = 2 if is_audio else NUM_WORKERS
-    return DataLoader(ds, batch_size=BATCH_SIZE, shuffle=shuffle,
+    return DataLoader(ds, batch_size=batch, shuffle=shuffle,
                       num_workers=workers, pin_memory=True,
                       persistent_workers=(workers > 0), prefetch_factor=2,
                       multiprocessing_context="fork" if workers > 0 else None,
                       collate_fn=collate_audio if is_audio else None,
-                      drop_last=is_train)   # [FIX 1] val은 drop_last=False → ZeroDivisionError 방지
+                      drop_last=is_train)
 
 def get_class_weights(ds, class_list):
     labels = [ds.label_to_id[c] for _, c in ds.samples]
@@ -347,10 +374,12 @@ def train():
 
     behavior_sched = img_sched(behavior_opt, len(bds))
     emotion_sched  = img_sched(emotion_opt,  len(eds))
+    # [FIX-SOUND] scheduler total steps를 AUDIO_BATCH_SIZE 기준으로 재계산
+    _audio_steps_per_epoch = max(1, len(sds) // AUDIO_BATCH_SIZE)
     audio_sched    = get_cosine_schedule_with_warmup(
         audio_opt,
-        num_warmup_steps=max(1, (len(sds)//BATCH_SIZE)*2),
-        num_training_steps=max(1, (len(sds)//BATCH_SIZE)*EPOCHS),
+        num_warmup_steps=max(1, _audio_steps_per_epoch * 3),
+        num_training_steps=max(1, _audio_steps_per_epoch * EPOCHS),
     )
 
     # [FIX 1] val 로더는 is_train=False → drop_last=False → ZeroDivisionError 방지

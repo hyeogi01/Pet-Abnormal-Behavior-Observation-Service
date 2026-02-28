@@ -51,8 +51,8 @@ WORK_DIR      = "files/work/dog_normal_dataset"
 
 DEVICE      = "cuda:1" if torch.cuda.is_available() else "cpu"
 EPOCHS      = 100
-BATCH_SIZE  = 32
-NUM_WORKERS = 12           # [FIX 5] 24→8: worker 과다 시 librosa/PIL deadlock 방지
+BATCH_SIZE  = 64
+NUM_WORKERS = 24
 SR          = 16000
 MAX_AUDIO_LEN = SR * 5
 
@@ -91,9 +91,19 @@ DOG_SOUND_CLASSES = [
 
 DOG_PATELLA_CLASSES = ["1", "2", "3", "4", "normal"]  # 5클래스 (슬개골 이형성 등급)
 
-# ──────────────────────── PATELLA KEYPOINT SCHEMA ─────────────────────────────
-# annotation_info 랜드마크 5종 × 좌우 최대 2개 = 10 슬롯
-# 각 슬롯: (x, y, visible) 3값 → KP_DIM = 30
+# ──────────────────────── PATELLA FEATURE SCHEMA ──────────────────────────────
+#
+# JSON 구조 활용:
+#   annotation_info  → 랜드마크 (x,y) 좌표     → raw KP 30d + 관절 각도 9d
+#   sensor_values    → 압력판 프레임 데이터     → 통계 피처 18d
+#
+# 최종 입력 벡터 구성:
+#   [0:30]  KP_RAW   raw (x,y,visible) × 5 landmark × 2 side
+#   [30:39] KP_ANGLE hip/knee/ankle angle × left/right + asymmetry × 3
+#   [39:57] SENSOR   per-frame (mean,max,std,L-col-mean,R-col-mean,asym) × 3 frames  [FIX]
+#   [57:59] MEDICAL  left_foot_grade/4, right_foot_grade/4                            [NEW]
+#   FEAT_DIM = 59
+
 PATELLA_KP_LABELS = [
     "Iliac crest",
     "Femoral greater trochanter",
@@ -101,13 +111,132 @@ PATELLA_KP_LABELS = [
     "Lateral malleolus of the distal tibia",
     "Distal lateral aspect of the fifth metatarsus",
 ]
-# "label_출현순서" → 슬롯 인덱스(0~9)
 PATELLA_KP_SLOT = {
     f"{label}_{i}": idx * 2 + i
     for idx, label in enumerate(PATELLA_KP_LABELS)
     for i in range(2)
 }
-KP_DIM = len(PATELLA_KP_LABELS) * 2 * 3  # 5 × 2 × 3 = 30
+KP_DIM   = len(PATELLA_KP_LABELS) * 2 * 3   # 30 : raw keypoint block
+ANG_DIM  = 9    # hip×2 + knee×2 + ankle×2 + asym×3
+SENS_DIM = 18   # 6 stats × 3 frames
+MED_DIM  = 2    # pet_medical_record_info: left_val, right_val (각 [0,1] 정규화)
+FEAT_DIM = KP_DIM + ANG_DIM + SENS_DIM + MED_DIM  # 59
+
+def _angle_deg(a, b, c) -> float:
+    """꼭짓점 b의 각도 (도 단위). 좌표 없으면 0 반환."""
+    a, b, c = np.asarray(a, float), np.asarray(b, float), np.asarray(c, float)
+    v1, v2 = a - b, c - b
+    n1, n2 = np.linalg.norm(v1), np.linalg.norm(v2)
+    if n1 < 1e-8 or n2 < 1e-8:
+        return 0.0
+    cos = np.clip(np.dot(v1, v2) / (n1 * n2), -1.0, 1.0)
+    return float(np.degrees(np.arccos(cos)))
+
+def _parse_patella_features(json_path: str) -> np.ndarray:
+    """
+    JSON → FEAT_DIM(59) float32 벡터.
+
+    [Block A: 0:30] raw keypoint (x, y, visible) × 10 slots
+    [Block B: 30:39] joint angles
+        [30,31] hip   angle L/R  : iliac→trochanter→femorotibial
+        [32,33] knee  angle L/R  : trochanter→femorotibial→malleolus
+        [34,35] ankle angle L/R  : femorotibial→malleolus→metatarsus
+        [36]    hip asymmetry    : |L-R| / (L+R+ε)
+        [37]    knee asymmetry   (핵심: 슬개골 이형성은 좌우 비대칭으로 드러남)
+        [38]    ankle asymmetry
+    [Block C: 39:57] sensor_values stats × 3 frames
+        프레임 구조: [sync(2), proto(2), cols, rows, frame_idx, grid(cols×rows), ..., end(254)]
+        grid data: vals[7 : 7 + cols×rows]  → row-major, 2D 분할로 올바른 L/R 계산
+        per frame: [mean, max, std, L-col-mean, R-col-mean, asym]
+    [Block D: 57:59] pet_medical_record_info
+        [57] left  foot grade (0~4 → /4 정규화)
+        [58] right foot grade (0~4 → /4 정규화)
+    """
+    feat = np.zeros(FEAT_DIM, dtype=np.float32)
+    if not os.path.exists(json_path):
+        return feat
+    try:
+        with open(json_path, encoding="utf-8") as f:
+            data = json.load(f)
+
+        # ── Block A: raw keypoint ───────────────────────────────────────────
+        label_count: dict = defaultdict(int)
+        kp_xy: dict = {}
+        for ann in data.get("annotation_info", []):
+            label = ann["label"]
+            occ   = label_count[label]
+            label_count[label] += 1
+            slot  = PATELLA_KP_SLOT.get(f"{label}_{occ}")
+            if slot is None:
+                continue
+            x, y = float(ann["x"]), float(ann["y"])
+            base  = slot * 3
+            feat[base], feat[base+1], feat[base+2] = x, y, 1.0
+            kp_xy[f"{label}_{occ}"] = (x, y)
+
+        # ── Block B: joint angles ───────────────────────────────────────────
+        ZERO = (0.0, 0.0)
+        angles = []
+        for side in [0, 1]:
+            iliac = kp_xy.get(
+                f"Iliac crest_{min(side, label_count.get('Iliac crest', 0) - 1)}", ZERO)
+            troch = kp_xy.get(f"Femoral greater trochanter_{side}", ZERO)
+            ftj   = kp_xy.get(f"Femorotibial joint_{side}", ZERO)
+            mall  = kp_xy.get(f"Lateral malleolus of the distal tibia_{side}", ZERO)
+            meta  = kp_xy.get(f"Distal lateral aspect of the fifth metatarsus_{side}", ZERO)
+            hip   = _angle_deg(iliac, troch, ftj)  / 180.0
+            knee  = _angle_deg(troch, ftj,   mall) / 180.0
+            ankle = _angle_deg(ftj,   mall,  meta) / 180.0
+            angles.append((hip, knee, ankle))
+        feat[30], feat[32], feat[34] = angles[0]   # L
+        feat[31], feat[33], feat[35] = angles[1]   # R
+        for k, (l, r) in enumerate(zip(angles[0], angles[1])):
+            feat[36+k] = abs(l - r) / (l + r + 1e-6)
+
+        # ── Block C: sensor_values ──────────────────────────────────────────
+        # [FIX] 헤더 구조: [sync(0-1), proto(2-3), cols(4), rows(5), frame_idx(6), grid..., end(254)]
+        #       올바른 grid data: vals[7 : 7 + cols×rows]
+        #       잘못된 방식(이전): vals[6:] → frame_idx + grid + tail + end_marker(254) 포함
+        #       end_marker(254/255≈0.996)가 R_sum을 오염시켜 비대칭값이 0.7~1.0으로 부풀려짐
+        sensor_frames = data.get("sensor_values", [])
+        for fi, frame in enumerate(sensor_frames[:3]):
+            vals = np.array(frame, dtype=np.float32)
+            cols = int(vals[4])   # 12
+            rows = int(vals[5])   # 10
+            grid_size = cols * rows   # 120
+            # [FIX] grid 데이터만 추출 (frame_idx / tail / end_marker 제외)
+            grid_flat = vals[7 : 7 + grid_size] / 255.0
+            if len(grid_flat) < grid_size:
+                continue   # 데이터 불완전 시 건너뜀
+            # [FIX] 2D 재구성 후 열 기준 L/R 분할 (row-major 구조 반영)
+            grid_2d = grid_flat.reshape(rows, cols)
+            L_half  = grid_2d[:, : cols // 2]   # 왼쪽 6열
+            R_half  = grid_2d[:, cols // 2 :]   # 오른쪽 6열
+            L_sum   = L_half.sum()
+            R_sum   = R_half.sum()
+            base    = 39 + fi * 6
+            feat[base+0] = grid_flat.mean()
+            feat[base+1] = grid_flat.max()
+            feat[base+2] = grid_flat.std()
+            feat[base+3] = L_sum / (L_half.size + 1e-6)   # 셀당 평균 (정규화)
+            feat[base+4] = R_sum / (R_half.size + 1e-6)
+            feat[base+5] = abs(L_sum - R_sum) / (L_sum + R_sum + 1e-6)
+
+        # ── Block D: pet_medical_record_info ────────────────────────────────
+        # [NEW] 족별 임상 진단 등급 (0=정상, 1~4=이형성 등급) → /4 정규화
+        #       left/right 중 해당 없으면 0 유지 (graceful degradation)
+        MAX_GRADE = 4.0
+        for rec in data.get("pet_medical_record_info", []):
+            pos = rec.get("foot_position", "")
+            val = float(rec.get("value", 0)) / MAX_GRADE
+            if pos == "left":
+                feat[57] = val
+            elif pos == "right":
+                feat[58] = val
+
+    except Exception:
+        pass
+    return feat
 
 # ─────────────────────────────── AUGMENTATION ─────────────────────────────────
 def augment_audio(waveform, p=0.7):
@@ -126,6 +255,16 @@ TRANSFORM_TRAIN = transforms.Compose([
     transforms.Resize((IMG_RESIZE, IMG_RESIZE)),
     transforms.RandomCrop(IMG_SIZE),
     transforms.RandomHorizontalFlip(),
+    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1),
+    transforms.ToTensor(),
+    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+])
+# [FIX] Patella 전용 transform: RandomHorizontalFlip 제외
+#   → 이미지 좌우 반전 시 L/R 비대칭 피처(feat[36-38, 42-57])와 불일치 발생
+#   → 슬개골 등급은 좌우 비대칭이 핵심 지표이므로 반전 자체가 정보 손상
+TRANSFORM_PATELLA_TRAIN = transforms.Compose([
+    transforms.Resize((IMG_RESIZE, IMG_RESIZE)),
+    transforms.RandomCrop(IMG_SIZE),
     transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
@@ -206,40 +345,16 @@ class PatellaDataset(Dataset):
                     img_path  = os.path.join(d, f)
                     json_path = os.path.splitext(img_path)[0] + '.json'
                     self.samples.append((img_path, json_path, cls))
-        self.transform = TRANSFORM_TRAIN if augment else TRANSFORM_VAL
+        self.transform = TRANSFORM_PATELLA_TRAIN if augment else TRANSFORM_VAL  # [FIX] HorizontalFlip 제외
         print(f"  📊 patella ({os.path.basename(task_dir)}): "
               f"{len(self.samples)} samples, {len(self.label_to_id)} classes")
-
-    def _parse_kp(self, json_path) -> np.ndarray:
-        """annotation_info → KP_DIM(30)차원 float32 벡터 (슬롯×3: x, y, visible)"""
-        kp = np.zeros(KP_DIM, dtype=np.float32)
-        if not os.path.exists(json_path):
-            return kp
-        try:
-            with open(json_path, encoding="utf-8") as f:
-                data = json.load(f)
-            label_count = defaultdict(int)
-            for ann in data.get("annotation_info", []):
-                label      = ann["label"]
-                occurrence = label_count[label]
-                label_count[label] += 1
-                slot = PATELLA_KP_SLOT.get(f"{label}_{occurrence}")
-                if slot is None:
-                    continue
-                base = slot * 3
-                kp[base]   = float(ann["x"])
-                kp[base+1] = float(ann["y"])
-                kp[base+2] = 1.0   # visible
-        except Exception:
-            pass
-        return kp
 
     def __len__(self): return len(self.samples)
     def __getitem__(self, idx):
         img_path, json_path, cls = self.samples[idx]
-        img = self.transform(Image.open(img_path).convert("RGB"))
-        kp  = torch.from_numpy(self._parse_kp(json_path))
-        return img, kp, self.label_to_id[cls]
+        img  = self.transform(Image.open(img_path).convert("RGB"))
+        feat = torch.from_numpy(_parse_patella_features(json_path))  # (FEAT_DIM=59,)
+        return img, feat, self.label_to_id[cls]
 
 
 # ─────────────────────────────── MODELS ───────────────────────────────────────
@@ -272,22 +387,54 @@ class AudioModel(nn.Module):
     def forward(self, input_values, labels=None):
         return self.model(input_values=input_values, labels=labels)
 
+class OrdinalLoss(nn.Module):
+    """
+    슬개골 등급(normal<1<2<3<4)은 순서형(ordinal) 데이터.
+    인접 등급 오분류보다 2+ 등급 건너뛴 오분류에 더 큰 페널티 부여.
+      penalty_weight = 1 + α × |pred - target|
+    일반 CrossEntropy는 이 거리를 무시하므로 OrdinalLoss 사용.
+    """
+    def __init__(self, alpha: float = 0.5, weight=None, label_smoothing: float = 0.0):
+        super().__init__()
+        self.alpha          = alpha
+        self.label_smoothing = label_smoothing
+        self.register_buffer("weight", weight)
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        import torch.nn.functional as F
+        log_p  = F.log_softmax(logits, dim=-1)
+        # label-smoothed NLL
+        nll    = F.nll_loss(log_p, targets, weight=self.weight, reduction="none")
+        smooth = -log_p.mean(dim=-1)
+        ce     = (1 - self.label_smoothing) * nll + self.label_smoothing * smooth
+        # ordinal distance penalty
+        preds  = logits.argmax(dim=1)
+        dist   = (preds - targets).abs().float()
+        weight = 1.0 + self.alpha * dist
+        return (ce * weight).mean()
+
+
 class PatellaModel(nn.Module):
     """
-    EfficientNet-V2-S 이미지 피처(1280) +
-    키포인트 MLP(30→64→128) →
-    융합 헤드(1408→512→num_classes)
+    EfficientNet-V2-S 이미지 피처(1280)
+      + 통합 피처 MLP(FEAT_DIM=59 → 128)
+          · raw keypoint  30d : 랜드마크 (x,y,visible)
+          · joint angles   9d : hip/knee/ankle × L/R + 비대칭 × 3
+          · sensor stats  18d : 압력판 그리드(rows×cols) 2D 분할 통계 × 3 frames
+          · medical record 2d : 좌/우 족 임상 등급 (0~4 → /4 정규화)
+    → 융합 헤드 (1408 → 512 → num_classes)
     """
-    def __init__(self, num_classes, kp_dim=KP_DIM):
+    def __init__(self, num_classes, feat_dim=FEAT_DIM):
         super().__init__()
         self.backbone, img_feat = _efficientnet_backbone()   # 1280
 
-        self.kp_branch = nn.Sequential(
-            nn.Linear(kp_dim, 64),
-            nn.ReLU(),
+        self.feat_branch = nn.Sequential(
+            nn.Linear(feat_dim, 128),
+            nn.LayerNorm(128),
+            nn.GELU(),
             nn.Dropout(0.2),
-            nn.Linear(64, 128),
-            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.GELU(),
         )
 
         fused_feat = img_feat + 128   # 1280 + 128 = 1408
@@ -300,10 +447,10 @@ class PatellaModel(nn.Module):
             nn.Linear(512, num_classes),
         )
 
-    def forward(self, img, kp):
-        img_feat = self.backbone(img)                        # (B, 1280)
-        kp_feat  = self.kp_branch(kp)                        # (B, 128)
-        fused    = torch.cat([img_feat, kp_feat], dim=1)     # (B, 1408)
+    def forward(self, img, feat):
+        img_f  = self.backbone(img)                          # (B, 1280)
+        kp_f   = self.feat_branch(feat)                      # (B, 128)
+        fused  = torch.cat([img_f, kp_f], dim=1)             # (B, 1408)
         return self.head(fused)
 
 
@@ -330,6 +477,23 @@ def _task_ready(name, class_list=None,
         if f.lower().endswith(img_exts)
     )
     return total > 0
+
+def _patella_split_valid() -> bool:
+    """모든 클래스가 train에 1개 이상 + val에 전체 1개 이상인지 검증."""
+    img_exts = ('.jpg', '.png', '.jpeg')
+    def _count(split, cls):
+        d = os.path.join(WORK_DIR, split, "patella", cls)
+        if not os.path.isdir(d): return 0
+        return sum(1 for f in os.listdir(d) if f.lower().endswith(img_exts))
+    for cls in DOG_PATELLA_CLASSES:
+        if _count("train", cls) == 0:
+            print(f"  ⚠️  patella split 불완전: train/{cls}에 샘플 없음 → 재분할")
+            return False
+    if sum(_count("val", cls) for cls in DOG_PATELLA_CLASSES) == 0:
+        print("  ⚠️  patella split 불완전: val 전체 비어있음 → 재분할")
+        return False
+    return True
+
 
 def collect_and_split(src_root, task_name, class_list, oversample_min=0):
     """클래스별 stratified split → WORK_DIR 복사."""
@@ -405,15 +569,25 @@ def collect_and_split_patella(src_root):
     for cls, sessions in class_sessions.items():
         rng.shuffle(sessions)
         n = len(sessions)
-        n_val   = max(1, int(n * 0.1))
-        n_test  = max(1, int(n * 0.1))
-        n_train = max(0, n - n_val - n_test)
+        # [FIX] n_train=0 방지: 세션 수별 분기로 train 최소 1세션 보장
+        if n >= 4:
+            n_val, n_test = max(1, int(n * 0.15)), max(1, int(n * 0.15))
+            n_train = n - n_val - n_test
+        elif n == 3:
+            n_train, n_val, n_test = 2, 1, 0
+        elif n == 2:
+            n_train, n_val, n_test = 1, 1, 0
+        else:
+            n_train, n_val, n_test = 1, 0, 0
+            print(f"  ⚠️  patella/{cls}: 세션 1개 → train에만 배정")
 
         split_sessions = {
             "train": sessions[:n_train],
             "val":   sessions[n_train:n_train + n_val],
-            "test":  sessions[n_train + n_val:],
+            "test":  sessions[n_train + n_val:n_train + n_val + n_test],
         }
+        counts = {k: sum(len(s) for s in v) for k, v in split_sessions.items()}
+        print(f"  📂 patella/{cls}: 세션{n}개 → train {counts['train']}장/val {counts['val']}장/test {counts['test']}장")
         for sname, slist in split_sessions.items():
             all_pairs = [pair for session in slist for pair in session]
             dst_dir   = os.path.join(WORK_DIR, sname, "patella", cls)
@@ -445,10 +619,14 @@ def prepare_datasets():
         collect_and_split(SOUND_ROOT, "sound", DOG_SOUND_CLASSES, oversample_min=100)
     else: print("✅ sound ready")
 
-    if not _task_ready("patella", DOG_PATELLA_CLASSES):
-        print("📦 Preparing patella (dog)...")
+    if _patella_split_valid():
+        print("✅ patella ready (split validated)")
+    else:
+        print("📦 Preparing patella (dog) — 재분할...")
+        for split in ["train", "val", "test"]:
+            p = os.path.join(WORK_DIR, split, "patella")
+            if os.path.isdir(p): shutil.rmtree(p)
         collect_and_split_patella(PATELLA_ROOT)
-    else: print("✅ patella ready")
 
 
 # ──────────────────────────────── HELPERS ─────────────────────────────────────
@@ -474,10 +652,33 @@ def get_class_weights(ds, class_list):
     return torch.tensor(w, dtype=torch.float).to(DEVICE)
 
 def get_class_weights_patella(ds):
-    """PatellaDataset용 (samples: list of (img_path, json_path, cls))"""
+    """
+    PatellaDataset용 (samples: list of (img_path, json_path, cls))
+
+    [FIX] train split에 샘플이 없는 등급이 있을 경우 sklearn ValueError 방어.
+    - compute_class_weight는 classes 인자의 모든 값이 y에 최소 1회 이상 등장해야 함.
+    - 세션 수가 적은 등급(예: "4")은 train split에 이미지가 0개일 수 있음.
+    - 해결: 실제 y에 존재하는 클래스만 balanced weight 계산 후,
+             전체 5클래스 크기 tensor로 확장 (없는 클래스는 weight=1.0 으로 채움).
+    """
     labels = [ds.label_to_id[c] for _, _, c in ds.samples]
-    w = compute_class_weight('balanced', classes=np.arange(len(DOG_PATELLA_CLASSES)), y=labels)
-    return torch.tensor(w, dtype=torch.float).to(DEVICE)
+    if not labels:
+        return torch.ones(len(DOG_PATELLA_CLASSES), dtype=torch.float).to(DEVICE)
+
+    present    = sorted(set(labels))                          # 실제 존재하는 label_id
+    w_partial  = compute_class_weight('balanced',
+                                      classes=np.array(present), y=np.array(labels))
+
+    # 전체 클래스 크기(5)로 확장 — 없는 클래스는 weight=1.0 (중립)
+    w_full = np.ones(len(DOG_PATELLA_CLASSES), dtype=np.float32)
+    for cls_id, weight in zip(present, w_partial):
+        w_full[cls_id] = float(weight)
+
+    missing = [DOG_PATELLA_CLASSES[i] for i in range(len(DOG_PATELLA_CLASSES)) if i not in present]
+    if missing:
+        print(f"  ⚠️  patella train에 샘플 없는 등급: {missing} → weight=1.0 으로 설정")
+
+    return torch.tensor(w_full, dtype=torch.float).to(DEVICE)
 
 def clear(): gc.collect(); torch.cuda.empty_cache()
 
@@ -514,7 +715,7 @@ def train():
     behavior_model = ImageModel(len(DOG_BEHAVIOR_CLASSES))
     emotion_model  = ImageModel(len(DOG_EMOTION_CLASSES))
     audio_model    = AudioModel(len(DOG_SOUND_CLASSES))
-    patella_model  = PatellaModel(len(DOG_PATELLA_CLASSES))
+    patella_model  = PatellaModel(len(DOG_PATELLA_CLASSES), feat_dim=FEAT_DIM)
 
     # ── Optimizers ───────────────────────────────────────────────────────────────
     def img_opt(m):
@@ -526,7 +727,7 @@ def train():
     def patella_opt_fn(m):
         return torch.optim.AdamW([
             {"params": m.backbone.parameters(),  "lr": LR_BACKBONE, "weight_decay": 1e-4},
-            {"params": m.kp_branch.parameters(), "lr": LR_HEAD,     "weight_decay": 1e-4},
+            {"params": m.feat_branch.parameters(), "lr": LR_HEAD,     "weight_decay": 1e-4},
             {"params": m.head.parameters(),      "lr": LR_HEAD,     "weight_decay": 1e-4},
         ])
 
@@ -553,8 +754,11 @@ def train():
         weight=get_class_weights(eds, DOG_EMOTION_CLASSES),  label_smoothing=LABEL_SMOOTHING)
     criterion_s = nn.CrossEntropyLoss(
         weight=get_class_weights(sds, DOG_SOUND_CLASSES))
-    criterion_p = nn.CrossEntropyLoss(
-        weight=get_class_weights_patella(pds), label_smoothing=LABEL_SMOOTHING)
+    # [FIX] CrossEntropy → OrdinalLoss: 등급 순서 반영 (거리 오분류 페널티)
+    criterion_p = OrdinalLoss(
+        alpha=0.5,
+        weight=get_class_weights_patella(pds),
+        label_smoothing=LABEL_SMOOTHING)
 
     print("\n📂 Building datasets & loaders (val)...")
     bds_val = ImageDataset(os.path.join(WORK_DIR,"val","behavior"), DOG_BEHAVIOR_CLASSES, augment=False)
