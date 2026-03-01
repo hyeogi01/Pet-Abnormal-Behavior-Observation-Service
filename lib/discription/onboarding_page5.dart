@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pet_diary/pet_name_input_page.dart';
 import 'package:http/http.dart' as http; // 상단에 추가
 import 'dart:convert'; // JSON 변환을 위해 추가
+import 'package:pet_diary/main.dart';
 
 class OnboardingPage5 extends StatelessWidget {
   const OnboardingPage5({super.key});
@@ -20,17 +21,44 @@ class OnboardingPage5 extends StatelessWidget {
 
       final result = jsonDecode(response.body);
       if (response.statusCode == 200 && result['status'] == 'success') {
-        String loggedInId = result['user_id']; // [추가] 서버가 돌려준 실제 ID
-
         if (!context.mounted) return;
         Navigator.pop(context); // 다이얼로그 닫기
 
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => PetNameInputPage(userId: result['user_id']), // 실제 서버에서 받은 ID 전달
-          ),
-        );
+        // 회원가입인 경우 무조건 등록 페이지로 이동
+        if (isSignup) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => PetNameInputPage(userId: id)),
+          );
+        }
+        // 로그인인 경우 데이터 존재 여부에 따라 분기
+        else {
+          bool hasPet = result['has_pet_info'] ?? false;
+
+          if (hasPet) {
+            // 1. 데이터가 이미 있으므로 바로 대시보드로 이동
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const PetHealthDashboard(),
+              ),
+            );
+          } else {
+            // 2. 데이터가 없으므로 이름 입력(등록) 페이지로 이동
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PetNameInputPage(userId: id),
+              ),
+            );
+          }
+        }
+        // Navigator.pushReplacement(
+        //   context,
+        //   MaterialPageRoute(
+        //     builder: (context) => PetNameInputPage(userId: result['user_id']), // 실제 서버에서 받은 ID 전달
+        //   ),
+        // );
       } else {
         print("에러: ${result['message']}");
       }
