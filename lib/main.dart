@@ -85,7 +85,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
       body: _selectedIndex == 2
           ? _buildDashboardHome() // 홈 대시보드
           : _selectedIndex == 4
-          ? const MyPage()    // 마이페이지 (새로 만든 파일 연결)
+          ? MyPage(petData: petData)    // 마이페이지 (새로 만든 파일 연결)
           : Center(child: Text('준비 중인 페이지입니다.', style: TextStyle(color: Colors.grey[400], fontSize: 16))),
 
       // 하단 내비게이션 바
