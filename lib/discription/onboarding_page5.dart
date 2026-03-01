@@ -40,7 +40,7 @@ class OnboardingPage5 extends StatelessWidget {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) => const PetHealthDashboard(),
+                builder: (context) => PetHealthDashboard(userId: result['user_id']),
               ),
             );
           } else {

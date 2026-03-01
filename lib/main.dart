@@ -14,37 +14,39 @@ void main() {
 }
 
 class PetHealthDashboard extends StatefulWidget {
-  const PetHealthDashboard({super.key});
+  final String userId;
+  const PetHealthDashboard({super.key, required this.userId});
 
   @override
   State<PetHealthDashboard> createState() => _PetHealthDashboardState();
 }
 
 class _PetHealthDashboardState extends State<PetHealthDashboard> {
-  // 현재 선택된 메뉴 인덱스 (기본값 홈 = 2)
   int _selectedIndex = 2;
-  List<dynamic> serverLogs = [];
-  bool isLoading = true; // 로딩 상태 확인용
+
+  // 1. 단일 반려동물 정보를 담을 변수로 변경
+  Map<String, dynamic>? petData;
+  bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    fetchLogs(); // 화면이 로드될 때 데이터를 가져옵니다.
+    _fetchPetInfo(); // 함수 이름도 의미에 맞게 변경
   }
-  Future<void> fetchLogs() async {
-    final url = Uri.parse('http://localhost:8000/logs/');
+  Future<void> _fetchPetInfo() async {
+    final url = Uri.parse('http://localhost:8000/user-pet-info/${widget.userId}');
 
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {
-        final Map<String, dynamic> decodedData = json.decode(response.body);
+        final Map<String, dynamic> result = json.decode(response.body);
+
         setState(() {
-          if (response.body != 'null') { // 데이터가 있는 경우
-            final Map<String, dynamic> decodedData = json.decode(response.body);
-            // Map의 값(Value)들만 뽑아서 리스트로 만듭니다.
-            serverLogs = decodedData.values.toList().reversed.toList();
+          if (result['status'] == 'success') {
+            // 3. 서버 응답의 'data' 부분을 할당
+            petData = result['data'];
           } else {
-            serverLogs = [];
+            petData = null;
           }
           isLoading = false;
         });
@@ -54,7 +56,6 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
       setState(() => isLoading = false);
     }
   }
-
   // 하단 탭 클릭 시 상태 변경 함수
   void _onItemTapped(int index) {
     setState(() {
@@ -150,18 +151,20 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
           const SizedBox(height: 12),
           isLoading
               ? const Center(child: CircularProgressIndicator()) // 로딩 중이면 뱅글뱅글
-              : serverLogs.isEmpty
+              : petData == null
               ? const Center(child: Text('서버에 저장된 기록이 없습니다.')) // 데이터가 없으면 메시지
               : Column(
-            children: serverLogs.take(3).map((log) { // 최근 3개만 표시
-              // Firebase 데이터 구조에 맞춰서 매핑
-              return _buildDiaryItem(
-                  log['timestamp'] ?? '날짜 없음',
-                  log['pet_name'] ?? '콩이',
-                  85, // 활동량 예시
-                  log['behavior'] != '정상' // '정상'이 아닐 때만 주의사항 배지 표시
-              );
-            }).toList(),
+            children: [
+              if (petData != null)
+                _buildDiaryItem(
+                  petData!['pet_birthday'] ?? '날짜 정보 없음', // 생일 데이터 활용
+                  petData!['pet_name'] ?? '이름 없음',       // 이름 데이터 활용
+                  85, // 활동량 (현재 예시 값)
+                  false, // 주의사항 배지 여부
+                )
+              else
+                const Center(child: Text('등록된 반려동물 정보가 없습니다.')),
+            ],
           ),
           // ------------------------------------------
 
@@ -186,6 +189,8 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
   // --- 헬퍼 함수들 ---
 
   Widget _buildHeaderCard() {
+    String petName = petData?['pet_name'] ?? '콩이';
+    String petType = petData?['pet_type'] ?? '반려동물';
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -194,15 +199,15 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
       ),
       child: Column(
         children: [
-          const Row(
+          Row(
             children: [
-              CircleAvatar(radius: 25, backgroundColor: Colors.white),
-              SizedBox(width: 12),
+              const CircleAvatar(radius: 25, backgroundColor: Colors.white),
+              const SizedBox(width: 12),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('콩이의 건강일기', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                  Text('AI 기반 반려동물 케어', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  Text('$petName의 건강일기', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                  const Text('AI 기반 반려동물 케어', style: TextStyle(color: Colors.white70, fontSize: 12)),
                 ],
               )
             ],

@@ -268,7 +268,7 @@ class _PetRegistrationPageState extends State<PetRegistrationPage> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (context) => PetHealthDashboard(),
+        builder: (context) => PetHealthDashboard(userId: widget.userId),
       ),
     );
 
