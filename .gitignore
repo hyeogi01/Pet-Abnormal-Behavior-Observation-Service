@@ -1,7 +1,4 @@
 files/
-*.jpg
-*.jpeg
-*.png
 *.pth*
 *.pt  
 *.zip
