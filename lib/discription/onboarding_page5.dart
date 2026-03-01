@@ -1,9 +1,73 @@
 import 'package:flutter/material.dart';
 import 'package:pet_diary/pet_name_input_page.dart';
+import 'package:http/http.dart' as http; // 상단에 추가
+import 'dart:convert'; // JSON 변환을 위해 추가
 
 class OnboardingPage5 extends StatelessWidget {
   const OnboardingPage5({super.key});
 
+  // 1. 서버와 통신하는 실제 로직 (여기에 추가)
+  Future<void> _handleAuth(BuildContext context, String id, String pw, bool isSignup) async {
+    final String endpoint = isSignup ? '/signup/' : '/login/';
+    final Uri url = Uri.parse('http://localhost:8000$endpoint');
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'user_id': id, 'password': pw}),
+      );
+
+      final result = jsonDecode(response.body);
+      if (!context.mounted) return;
+      if (response.statusCode == 200 && result['status'] == 'success') {
+        Navigator.pop(context); // 다이얼로그 닫기
+
+        // 성공 시 다음 페이지로 이동
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => PetNameInputPage()),
+        );
+      } else {
+        print("에러: ${result['message']}");
+      }
+    } catch (e) {
+      print("연결 에러: $e");
+    }
+  }
+
+  // 2. 질문하신 다이얼로그 함수 (여기에 추가)
+  void _showEmailAuthDialog(BuildContext context) {
+    final TextEditingController idController = TextEditingController();
+    final TextEditingController pwController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("이메일 로그인/가입", style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: idController, decoration: const InputDecoration(hintText: "아이디")),
+            const SizedBox(height: 10),
+            TextField(controller: pwController, obscureText: true, decoration: const InputDecoration(hintText: "비밀번호")),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => _handleAuth(context, idController.text, pwController.text, false),
+            child: const Text("로그인", style: TextStyle(color: Colors.orange)),
+          ),
+          ElevatedButton(
+            onPressed: () => _handleAuth(context, idController.text, pwController.text, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, elevation: 0),
+            child: const Text("회원가입", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
   @override
   Widget build(BuildContext context) {
     // 오렌지 포인트 컬러 설정
@@ -119,6 +183,7 @@ class OnboardingPage5 extends StatelessWidget {
 
   // --- 로그인 바텀 시트 위젯 ---
   Widget _buildLoginSheet(BuildContext context) {
+
     return Container(
       height: MediaQuery.of(context).size.height * 0.45,
       padding: const EdgeInsets.all(24),
@@ -169,6 +234,18 @@ class OnboardingPage5 extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
+          // SNS 버튼 리스트 아래에 추가할 '이메일 로그인' 버튼
+          _buildSNSButton(
+            icon: Icons.email,
+            label: "이메일로 시작하기",
+            color: Colors.grey[200]!,
+            textColor: Colors.black,
+            onTap: () {
+              Navigator.pop(context); // 바텀 시트를 먼저 닫음
+              _showEmailAuthDialog(context); // 다이얼로그 호출
+            },
+          ),
+
           // 비회원 로그인 서브메뉴
           TextButton(
             onPressed: () {
@@ -195,6 +272,8 @@ class OnboardingPage5 extends StatelessWidget {
       ),
     );
   }
+
+
 
   // SNS 버튼 공통 디자인 위젯
   Widget _buildSNSButton({
