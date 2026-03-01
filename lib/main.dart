@@ -8,7 +8,7 @@ import 'dart:convert';
 
 void main() {
   runApp(const MaterialApp(
-    home: PetHealthDashboard(),
+    home: OnboardingPage(),
     debugShowCheckedModeBanner: false,
   ));
 }

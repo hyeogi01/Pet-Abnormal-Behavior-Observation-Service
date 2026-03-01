@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-
 import 'package:pet_diary/main.dart';
+import 'package:http/http.dart' as http; // 상단에 추가
+import 'dart:convert'; // JSON 변환을 위해 추가
 
 class PetRegistrationPage extends StatefulWidget {
   final String petName;
-
   const PetRegistrationPage({Key? key, required this.petName}) : super(key: key);
 
   @override
@@ -22,6 +22,33 @@ class _PetRegistrationPageState extends State<PetRegistrationPage> {
   final TextEditingController _diseaseController = TextEditingController();
   String _separationAnxiety = '모르겠어요';
 
+  // 사용자 입력 정보를 DB에 저장하는 함수
+  Future<void> _savePetInfo() async {
+    final Uri url = Uri.parse('http://localhost:8000/user-input/');
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'pet_name': widget.petName,                                    // 이전 페이지에서 넘어온 이름
+          'pet_type': '${_selectedSpecies} (${_speciesDetailController.text})', // 종 + 상세품종
+          'pet_gender': _selectedGender,                                 // 성별
+          'pet_birthday': _birthDate != null
+              ? '${_birthDate!.year}-${_birthDate!.month.toString().padLeft(2, '0')}-${_birthDate!.day.toString().padLeft(2, '0')}'
+              : '',                                                      // 생년월일 문자열 포맷
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        print('DB 저장 성공!');
+      } else {
+        print('저장 실패: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('네트워크 에러: $e');
+    }
+  }
   // [추가] 필수 입력값이 채워졌는지 확인하는 Getter
   bool get _isFormValid {
     return _speciesDetailController.text.trim().isNotEmpty && _birthDate != null;
@@ -225,8 +252,11 @@ class _PetRegistrationPageState extends State<PetRegistrationPage> {
     }
   }
 
-  void _navigateToDashboard() {
-    // 콘솔 데이터 확인
+  void _navigateToDashboard() async{
+    await _savePetInfo();
+
+    // 2. 화면 이동
+    if (!mounted) return;
     print('등록 완료: ${widget.petName}');
     // 로직 추가
     Navigator.pushReplacement(
