@@ -4,6 +4,10 @@ import 'pet_registration_page.dart'; // 다음 페이지 import
 // import 'dart:convert'; // JSON 변환을 위해 추가
 
 class PetNameInputPage extends StatefulWidget {
+  final String userId; // [추가] 부모로부터 전달받을 ID
+
+  const PetNameInputPage({Key? key, required this.userId}) : super(key: key); // [수정]
+
   @override
   _PetNameInputPageState createState() => _PetNameInputPageState();
 }
@@ -111,7 +115,10 @@ class _PetNameInputPageState extends State<PetNameInputPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => PetRegistrationPage(petName: _nameController.text),
+                      builder: (context) => PetRegistrationPage(
+                        petName: _nameController.text,
+                        userId: widget.userId, // [수정] 임시 값 대신 받은 ID 전달
+                      ),
                     ),
                   );
                 }

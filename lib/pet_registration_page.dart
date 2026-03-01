@@ -5,7 +5,13 @@ import 'dart:convert'; // JSON 변환을 위해 추가
 
 class PetRegistrationPage extends StatefulWidget {
   final String petName;
-  const PetRegistrationPage({Key? key, required this.petName}) : super(key: key);
+  final String userId; // [추가] 로그인한 유저의 ID를 저장할 변수
+
+  const PetRegistrationPage({
+    Key? key,
+    required this.petName,
+    required this.userId // [추가] 필수 인자로 설정
+  }) : super(key: key);
 
   @override
   _PetRegistrationPageState createState() => _PetRegistrationPageState();
@@ -24,7 +30,7 @@ class _PetRegistrationPageState extends State<PetRegistrationPage> {
 
   // 사용자 입력 정보를 DB에 저장하는 함수
   Future<void> _savePetInfo() async {
-    final Uri url = Uri.parse('http://localhost:8000/user-input/');
+    final Uri url = Uri.parse('http://localhost:8000/user-input/${widget.userId}');
 
     try {
       final response = await http.post(

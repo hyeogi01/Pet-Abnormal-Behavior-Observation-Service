@@ -19,14 +19,17 @@ class OnboardingPage5 extends StatelessWidget {
       );
 
       final result = jsonDecode(response.body);
-      if (!context.mounted) return;
       if (response.statusCode == 200 && result['status'] == 'success') {
+        String loggedInId = result['user_id']; // [추가] 서버가 돌려준 실제 ID
+
+        if (!context.mounted) return;
         Navigator.pop(context); // 다이얼로그 닫기
 
-        // 성공 시 다음 페이지로 이동
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => PetNameInputPage()),
+          MaterialPageRoute(
+            builder: (context) => PetNameInputPage(userId: result['user_id']), // 실제 서버에서 받은 ID 전달
+          ),
         );
       } else {
         print("에러: ${result['message']}");
@@ -252,10 +255,13 @@ class OnboardingPage5 extends StatelessWidget {
               // 1. 바텀 시트 닫기
               Navigator.pop(context);
               // 2. 메인 대시보드 화면으로 이동
+              // 2. 메인 대시보드 화면으로 이동
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => PetNameInputPage(),
+                  builder: (context) => const PetNameInputPage(
+                    userId: "guest_user", // [수정] 비회원용 임시 ID 전달
+                  ),
                 ),
               );
             },
