@@ -5,6 +5,7 @@ import 'package:pet_diary/mainPage/daily_pet.dart';
 import 'package:pet_diary/discription/onboarding_page.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:pet_diary/mainPage/mypage.dart';
 
 void main() {
   runApp(const MaterialApp(
@@ -70,15 +71,20 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
         backgroundColor: Colors.white,
         elevation: 0,
         leading: const Icon(Icons.menu, color: Colors.black),
-        title: const Text('Daily Behavior Diary',
-            style: TextStyle(color: Colors.black, fontSize: 14, fontWeight: FontWeight.bold)),
+        title: Text(
+            _selectedIndex == 2 ? 'Daily Behavior Diary' : (_selectedIndex == 4 ? '마이페이지' : '준비 중'),
+            style: const TextStyle(color: Colors.black, fontSize: 14, fontWeight: FontWeight.bold)
+        ),
         centerTitle: true,
         actions: [IconButton(icon: const Icon(Icons.share, color: Colors.blue), onPressed: () {})],
       ),
 
       // 선택된 탭 인덱스에 따라 홈 화면 또는 준비중 화면 표시
+      // 선택된 탭 인덱스에 따라 홈 화면, 마이페이지 또는 준비중 화면 표시
       body: _selectedIndex == 2
-          ? _buildDashboardHome()
+          ? _buildDashboardHome() // 홈 대시보드
+          : _selectedIndex == 4
+          ? const MyPage()    // 마이페이지 (새로 만든 파일 연결)
           : Center(child: Text('준비 중인 페이지입니다.', style: TextStyle(color: Colors.grey[400], fontSize: 16))),
 
       // 하단 내비게이션 바
