@@ -33,4 +33,4 @@
 - 입력 예정
 
 ## AI Model Structure
-- 입력 예정
+<img width="3971" height="2351" alt="model_architecture" src="https://github.com/user-attachments/assets/02f89f08-1805-43c5-a4a2-faf6dae1237d" />
