@@ -54,7 +54,7 @@ class OnboardingPage extends StatelessWidget {
 
               // 3. 텍스트 영역
               const Text(
-                "찬혁이 형이 똥을 싸면 알림",
+                "찬혁이 형이 똥을 싸면 알림22",
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
