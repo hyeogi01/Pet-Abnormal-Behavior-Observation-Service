@@ -54,3 +54,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+#서버 api키 관련
+**/key/testApi.json
