@@ -63,3 +63,5 @@ app.*.map.json
 
 #groq api key
 .env
+*.mp4
+/Frontend/linux/flutter
