@@ -15,7 +15,7 @@ from FastAPI.main.db import get_db, get_minio_client, DAILY_BEHAVIOR_BUCKET
 from FastAPI.main.daily_behavior_inference import daily_behavior_engine
 
 # LLM Diary & Statistics Imports
-from FastAPI.main.llm_diary import generate_daily_diary
+from FastAPI.main.llm_diary import generate_daily_diary, get_diary_list
 from FastAPI.main.statistics import get_weekly_statistics
 
 @asynccontextmanager
@@ -56,7 +56,7 @@ class User(BaseModel):
     password: str
 
 @app.post("/login/")
-async def login(user: User):
+def login(user: User):
     ref = firebase_db.reference(f'users/{user.user_id}')
     user_data = ref.get()
 
@@ -98,14 +98,14 @@ class Log(BaseModel):
     timestamp: str
 
 @app.post("/log/")
-async def save_log(log: Log):
+def save_log(log: Log):
     # 'pet_logs'라는 경로에 데이터 저장
     ref = firebase_db.reference('pet_logs')
     new_log_ref = ref.push(log.dict())
     return {"status": "success", "id": new_log_ref.key}
     
 @app.get("/logs/")
-async def get_logs():
+def get_logs():
     ref = firebase_db.reference('pet_logs')
     return ref.get()
 
@@ -117,7 +117,7 @@ class PetInfo(BaseModel):
     pet_birthday : str
     
 @app.post("/user-input/{user_id}")
-async def save_pet_info(user_id: str, data: PetInfo):
+def save_pet_info(user_id: str, data: PetInfo):
     db_client = get_db()
     # Update user document with pet_info in MongoDB
     result = db_client["users"].update_one(
@@ -128,7 +128,7 @@ async def save_pet_info(user_id: str, data: PetInfo):
     return {"status": "success", "user_id": user_id}
 
 @app.get("/user-pet-info/{user_id}")
-async def get_all_pet_info(user_id: str):
+def get_all_pet_info(user_id: str):
     db_client = get_db()
     user_data = db_client["users"].find_one({"user_id": user_id})
 
@@ -162,49 +162,90 @@ async def analyze_disease(
         return {"status": "error", "message": f"Server processing error: {str(e)}"}
 
 # ─────────────────────────── HYBRID NEW ───────────────────────────
-# AI 일상 행동 분석 API (Video Clip)
+# AI 일상 행동 분석 API (Video Clip -> Frame Image Upload)
 @app.post("/api/daily-behavior")
-async def analyze_daily_behavior(
+def analyze_daily_behavior(
     user_id: str = Form(...),
     pet_type: str = Form(...),
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    timestamp: str = Form(None)
 ):
+    import tempfile
+    import os
+    import cv2
+    import traceback
     try:
-        contents = await file.read()
+        contents = file.file.read()
+        print(f"Received video: len={len(contents)} timestamp={timestamp}", flush=True)
         
-        # 1. Upload to MinIO
-        minio_client = get_minio_client()
-        file_extension = file.filename.split(".")[-1] if "." in file.filename else "mp4"
-        object_name = f"{user_id}/{uuid.uuid4()}.{file_extension}"
-        
-        minio_client.put_object(
-            DAILY_BEHAVIOR_BUCKET,
-            object_name,
-            io.BytesIO(contents),
-            length=len(contents),
-            content_type=file.content_type
-        )
-        
-        video_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
-        
-        # 2. Daily Behavior & Sound Inference
+        # 1. Daily Behavior & Sound Inference (Analyze full clip)
+        print("Starting AI inference...", flush=True)
         ai_result = daily_behavior_engine.analyze_clip(contents, pet_type)
+        print("Completed AI inference.", flush=True)
+
+        # 2. Extract ONLY ONE frame to upload to MinIO to save storage costs
+        print("Extracting frame...", flush=True)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4", mode="wb") as tmp_file:
+            tmp_file.write(contents)
+            temp_video_path = tmp_file.name
+
+        cap = cv2.VideoCapture(temp_video_path)
+        ret, frame = cap.read()
+        cap.release()
+        os.remove(temp_video_path)
+        print(f"Extracted frame successfully. Ret: {ret}", flush=True)
+
+        minio_client = get_minio_client()
+        object_name = f"{user_id}/{uuid.uuid4()}.jpg"
         
+        if ret:
+             # Encode image
+             _, buffer = cv2.imencode('.jpg', frame)
+             image_bytes = buffer.tobytes()
+             minio_client.put_object(
+                 DAILY_BEHAVIOR_BUCKET,
+                 object_name,
+                 io.BytesIO(image_bytes),
+                 length=len(image_bytes),
+                 content_type="image/jpeg"
+             )
+        else:
+             # Fallback if frame read fails (e.g. empty video)
+             minio_client.put_object(
+                 DAILY_BEHAVIOR_BUCKET,
+                 object_name,
+                 io.BytesIO(b""),
+                 length=0,
+                 content_type="image/jpeg"
+             )
+        
+        # We store the image URL instead of video URL
+        image_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
+        
+        # Determine timestamp
+        if timestamp:
+            try:
+                log_time = datetime.datetime.fromisoformat(timestamp)
+            except ValueError:
+                log_time = datetime.datetime.now()
+        else:
+            log_time = datetime.datetime.now()
+
         # 3. Save resulting metadata to MongoDB
         db_client = get_db()
         doc = {
             "user_id": user_id,
             "pet_type": pet_type,
-            "timestamp": datetime.datetime.now(),
-            "video_url": video_url,
+            "timestamp": log_time,
+            "video_url": image_url, # Key kept as video_url for frontend compatibility, but it points to an image
             "analysis_result": ai_result
         }
         db_client["daily_logs"].insert_one(doc)
         
         return {
             "status": "success",
-            "message": "Routine behavior analyzed successfully",
-            "video_url": video_url,
+            "message": "Routine behavior analyzed and ONE frame saved successfully",
+            "video_url": image_url,
             "ai_inference": ai_result
         }
         
@@ -249,3 +290,51 @@ async def get_pet_statistics(user_id: str, pet_type: str):
         }
     except Exception as e:
         return {"status": "error", "message": f"Statistics aggregation error: {str(e)}"}
+
+@app.get("/api/daily-diaries/{user_id}")
+def fetch_diary_list(user_id: str, limit: int = 0):
+    """
+    Fetches a list of generated diaries for the dashboard (limit=5) or total view (limit=0).
+    """
+    try:
+        diaries = get_diary_list(user_id, limit)
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "data": diaries
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Fetching diaries error: {str(e)}"}
+
+@app.get("/api/gallery/{user_id}")
+def get_video_gallery(user_id: str):
+    """
+    Fetches video URLs from daily_logs to display in the Photo Gallery.
+    """
+    try:
+        db_client = get_db()
+        cursor = db_client["daily_logs"].find({"user_id": user_id}).sort("timestamp", -1)
+        
+        gallery_items = []
+        for doc in cursor:
+            # Safely get the analysis results
+            beh_info = doc.get("analysis_result", {})
+            if isinstance(beh_info, dict) and beh_info.get("status") == "success":
+                beh_data = beh_info.get("behavior_analysis", {})
+                emotion = beh_data.get("emotion", "Unknown") if isinstance(beh_data, dict) else "Unknown"
+            else:
+                emotion = "Unknown"
+                
+            gallery_items.append({
+                "timestamp": doc["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
+                "video_url": doc.get("video_url", "").replace("minio:9000", "localhost:9000"),
+                "emotion": emotion
+            })
+            
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "data": gallery_items
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Gallery fetching error: {str(e)}"}

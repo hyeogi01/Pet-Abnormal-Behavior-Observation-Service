@@ -7,6 +7,8 @@ import 'package:pet_diary/mainPage/examination_page.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:pet_diary/mainPage/mypage.dart';
+import 'package:pet_diary/mainPage/photo_gallery.dart'; // Phase 4 Photo Gallery
+import 'package:pet_diary/mainPage/diary_detail.dart'; // Phase 4.1 Detail View
 
 void main() {
   runApp(const MaterialApp(
@@ -30,10 +32,16 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
   Map<String, dynamic>? petData;
   bool isLoading = true;
 
+  // 2. Fetch recent diaries
+  List<dynamic> recentDiaries = [];
+  bool isDiaryLoading = true;
+  final String baseUrl = "http://localhost:8080"; // !IMPORTANT: 안드로이드 실기기 IP 입력 부분 (예: 192.168.0.X:8080)
+
   @override
   void initState() {
     super.initState();
-    _fetchPetInfo(); // 함수 이름도 의미에 맞게 변경
+    _fetchPetInfo();
+    _fetchRecentDiaries();
   }
   Future<void> _fetchPetInfo() async {
     final url = Uri.parse('http://localhost:8000/user-pet-info/${widget.userId}');
@@ -57,6 +65,26 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
       print('연결 실패: $e');
       setState(() => isLoading = false);
     }
+  }
+
+  Future<void> _fetchRecentDiaries() async {
+    final url = Uri.parse('$baseUrl/api/daily-diaries/${widget.userId}?limit=5');
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded['status'] == 'success') {
+          setState(() {
+            recentDiaries = decoded['data'] ?? [];
+            isDiaryLoading = false;
+          });
+          return;
+        }
+      }
+    } catch (e) {
+      print('Diary fetch error: $e');
+    }
+    setState(() => isDiaryLoading = false);
   }
   // 하단 탭 클릭 시 상태 변경 함수
   void _onItemTapped(int index) {
@@ -86,6 +114,8 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
           ? ExaminationPage(petData: petData) // 새로 만든 AI 검진 페이지 연결
           : _selectedIndex == 2
           ? _buildDashboardHome() // 홈 대시보드
+          : _selectedIndex == 3
+          ? PhotoGalleryPage(userId: widget.userId) // 사진첩 연동 (Phase 4)
           : _selectedIndex == 4
           ? MyPage(petData: petData)    // 마이페이지 (새로 만든 파일 연결)
           : Center(child: Text('준비 중인 페이지입니다.', style: TextStyle(color: Colors.grey[400], fontSize: 16))),
@@ -142,7 +172,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
                   // DiaryListPage로 이동
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => DiaryListPage()),
+                    MaterialPageRoute(builder: (context) => DiaryListPage(userId: widget.userId)),
                   );
                 },
                 child: Text(
@@ -157,23 +187,29 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
             ],
           ),
           const SizedBox(height: 12),
-          isLoading
-              ? const Center(child: CircularProgressIndicator()) // 로딩 중이면 뱅글뱅글
-              : petData == null
-              ? const Center(child: Text('서버에 저장된 기록이 없습니다.')) // 데이터가 없으면 메시지
-              : Column(
-            children: [
-              if (petData != null)
-                _buildDiaryItem(
-                  petData!['pet_birthday'] ?? '날짜 정보 없음', // 생일 데이터 활용
-                  petData!['pet_name'] ?? '이름 없음',       // 이름 데이터 활용
-                  85, // 활동량 (현재 예시 값)
-                  false, // 주의사항 배지 여부
-                )
-              else
-                const Center(child: Text('등록된 반려동물 정보가 없습니다.')),
-            ],
-          ),
+          isDiaryLoading
+              ? const Center(child: CircularProgressIndicator())
+              : recentDiaries.isEmpty
+                  ? const Center(child: Text('최근 일기 기록이 없습니다.'))
+                  : Column(
+                      children: recentDiaries.map((diaryItem) {
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => DiaryDetailPage(diaryData: diaryItem)),
+                            );
+                          },
+                          child: _buildDiaryItem(
+                            diaryItem['date'] ?? '알 수 없는 날짜',
+                            '최신 일기', // 혹은 요일 계산 로직
+                            90, // 임시 활동 점수
+                            false, // 임시 warning 로직
+                            diaryItem['content'] ?? '내용 없음',
+                          ),
+                        );
+                      }).toList(),
+                    ),
           // ------------------------------------------
 
           const SizedBox(height: 24),
@@ -264,7 +300,10 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
     );
   }
 
-  Widget _buildDiaryItem(String date, String day, int activity, bool hasWarning) {
+  Widget _buildDiaryItem(String date, String day, int activity, bool hasWarning, String contentSummary) {
+    // 일기 텍스트 미리보기용 축약 (첫 30글자만)
+    String preview = contentSummary.length > 30 ? '${contentSummary.substring(0, 30)}...' : contentSummary;
+    
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
@@ -275,18 +314,18 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
       ),
       child: Row(
         children: [
-          Container(width: 50, height: 50, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(8))),
+          Container(width: 50, height: 50, decoration: BoxDecoration(color: Colors.purple[100], borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.menu_book, color: Colors.purple)),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(date, style: const TextStyle(fontWeight: FontWeight.bold)),
-                Text(day, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                Text(preview, style: const TextStyle(color: Colors.grey, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
                 Row(
                   children: [
-                    const Icon(Icons.trending_up, size: 14, color: Colors.green),
-                    Text(' 활동 $activity', style: const TextStyle(fontSize: 12)),
+                    const Icon(Icons.pets, size: 14, color: Colors.green),
+                    const Text(' AI 일기 생성됨', style: TextStyle(fontSize: 10)),
                     if (hasWarning) ...[
                       const SizedBox(width: 8),
                       Container(
@@ -300,7 +339,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
               ],
             ),
           ),
-          const Icon(Icons.sentiment_satisfied_alt, color: Colors.lightGreen),
+          const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
         ],
       ),
     );

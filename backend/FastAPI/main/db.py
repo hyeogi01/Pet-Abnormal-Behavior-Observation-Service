@@ -37,6 +37,8 @@ minio_client = None
 DAILY_BEHAVIOR_BUCKET = "daily-behavior-clips"
 USER_PROFILE_BUCKET = "user-profiles"
 
+import json
+
 def init_minio():
     global minio_client
     try:
@@ -56,11 +58,29 @@ def init_minio():
             else:
                 print(f"MinIO bucket '{bucket}' already exists.")
                 
-        print("Connected to MinIO successfully.")
-    except S3Error as e:
-        print(f"MinIO Error: {e}")
+            # Set public read policy for the buckets so Flutter can fetch images
+            policy = {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": ["s3:GetBucketLocation", "s3:ListBucket"],
+                        "Resource": [f"arn:aws:s3:::{bucket}"]
+                    },
+                    {
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": ["s3:GetObject"],
+                        "Resource": [f"arn:aws:s3:::{bucket}/*"]
+                    }
+                ]
+            }
+            minio_client.set_bucket_policy(bucket, json.dumps(policy))
+                
+        print("Connected to MinIO successfully and applied public policies.")
     except Exception as e:
-        print(f"Could not connect to MinIO: {e}")
+        print(f"MinIO Initialization Error: {e}")
 
 def get_minio_client():
     if minio_client is None:

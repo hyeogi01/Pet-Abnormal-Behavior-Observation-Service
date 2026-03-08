@@ -52,8 +52,19 @@ def generate_daily_diary(user_id: str, target_date: str = None) -> str:
     # Extract prompt data from logs
     pet_type = logs[0].get("pet_type", "반려동물")
     
+    # ---------------------------------------------------------
+    # RATE LIMIT FIX: If there are too many logs (e.g., 100 chunks),
+    # sample at most 15 logs to prevent Groq Token limit errors.
+    import random
+    if len(logs) > 15:
+        sampled_logs = random.sample(logs, 15)
+        sampled_logs.sort(key=lambda x: x.get("timestamp", datetime.now()))
+    else:
+        sampled_logs = logs
+    # ---------------------------------------------------------
+    
     activities_summary = []
-    for log in logs:
+    for log in sampled_logs:
         time_str = log["timestamp"].strftime("%H:%M")
         behavior_info = log.get("analysis_result", {})
         
@@ -104,11 +115,65 @@ def generate_daily_diary(user_id: str, target_date: str = None) -> str:
                     "content": prompt,
                 }
             ],
-            model="llama3-8b-8192",  # Using llama-3 8B model via Groq
+            model="llama-3.1-8b-instant",  # Updated to the newer 8B model on Groq
             temperature=0.7,
             max_tokens=1024,
         )
-        return response.choices[0].message.content
+        diary_content = response.choices[0].message.content
+        
+        # Save or update the generated diary to MongoDB
+        db_client = get_db()
+        db_client["daily_diaries"].update_one(
+            {"user_id": user_id, "date": target_date},
+            {"$set": {
+                "user_id": user_id,
+                "date": target_date,
+                "pet_type": pet_type,
+                "content": diary_content,
+                "created_at": datetime.now()
+            }},
+            upsert=True
+        )
+        
+        return diary_content
         
     except Exception as e:
         return f"일기 생성 중 오류가 발생했습니다: {str(e)}"
+
+def get_diary_list(user_id: str, limit: int = 0) -> list:
+    """
+    Fetches the saved diaries for a user.
+    If limit > 0, returns only that many recent diaries.
+    """
+    db_client = get_db()
+    cursor = db_client["daily_diaries"].find({"user_id": user_id}).sort("date", -1)
+    if limit > 0:
+        cursor = cursor.limit(limit)
+        
+    diaries = []
+    for doc in cursor:
+        target_date = doc.get("date")
+        video_url = ""
+        
+        if target_date:
+            try:
+                start_time = datetime.strptime(target_date, "%Y-%m-%d")
+                end_time = start_time + timedelta(days=1)
+                
+                log_with_video = db_client["daily_logs"].find_one({
+                    "user_id": user_id,
+                    "timestamp": {"$gte": start_time, "$lt": end_time},
+                    "video_url": {"$ne": ""}
+                })
+                if log_with_video and "video_url" in log_with_video:
+                    video_url = log_with_video["video_url"].replace("minio:9000", "localhost:9000")
+            except Exception:
+                pass
+
+        diaries.append({
+            "date": target_date or "Unknown Date",
+            "content": doc.get("content", ""),
+            "pet_type": doc.get("pet_type", "Unknown"),
+            "video_url": video_url
+        })
+    return diaries
