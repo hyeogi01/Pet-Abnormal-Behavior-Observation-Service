@@ -11,7 +11,7 @@ class OnboardingPage5 extends StatelessWidget {
   // 1. 서버와 통신하는 실제 로직 (여기에 추가)
   Future<void> _handleAuth(BuildContext context, String id, String pw, bool isSignup) async {
     final String endpoint = isSignup ? '/signup/' : '/login/';
-    final Uri url = Uri.parse('http://localhost:8000$endpoint');
+    final Uri url = Uri.parse('http://localhost:8080$endpoint');
 
     try {
       final response = await http.post(
@@ -61,10 +61,16 @@ class OnboardingPage5 extends StatelessWidget {
         //   ),
         // );
       } else {
-        print("에러: ${result['message']}");
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("로그인 실패: ${result['message'] ?? '알 수 없는 오류'}")),
+        );
       }
     } catch (e) {
-      print("연결 에러: $e");
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("서버 연결 실패: 백엔드가 켜져있는지 확인해주세요.")),
+      );
     }
   }
 

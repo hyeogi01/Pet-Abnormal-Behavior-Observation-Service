@@ -60,3 +60,8 @@ app.*.map.json
 
 #안티그래비티 룰 설정
 .agents/
+
+#groq api key
+.env
+*.mp4
+/Frontend/linux/flutter

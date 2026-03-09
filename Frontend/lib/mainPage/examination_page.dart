@@ -36,7 +36,7 @@ class _ExaminationPageState extends State<ExaminationPage> {
     String petType = widget.petData?['pet_type'] ?? 'unknown';
 
     // 백엔드 API 주소 (Docker 환경에서 로컬 접속)
-    var uri = Uri.parse('http://localhost:8000/api/analyze-disease');
+    var uri = Uri.parse('http://localhost:8080/api/analyze-disease');
     var request = http.MultipartRequest('POST', uri);
 
     // AI 모델에게 함께 보낼 메타데이터: 펫 종류와 질환 종류 (안구/피부)

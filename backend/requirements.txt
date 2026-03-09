@@ -12,3 +12,11 @@ torch
 torchvision
 Pillow
 numpy
+
+# Hybrid DB structure
+pymongo
+minio
+opencv-python-headless
+librosa
+transformers
+groq
