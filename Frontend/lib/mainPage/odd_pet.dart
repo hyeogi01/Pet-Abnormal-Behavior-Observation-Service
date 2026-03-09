@@ -75,49 +75,29 @@ class PageB extends StatelessWidget {
   // --- 위젯 빌더 함수들 ---
 
   Widget _buildHeader(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      // 1. 여기서 top(상단 여백)과 bottom(하단 여백) 수치를 줄이면 배너가 얇아집니다.
-      padding: const EdgeInsets.only(top: 10, left: 16, right: 16, bottom: 10),
-      decoration: const BoxDecoration(
-        color: Colors.orange,
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(30),
-          bottomRight: Radius.circular(30),
+  return AppBar(
+    backgroundColor: Colors.orange,
+    elevation: 0,
+    leading: IconButton(
+      icon: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
+      onPressed: () => Navigator.pop(context),
+    ),
+    title: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          '이상 행동 일기',
+          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: const Row(
-              children: [
-                Icon(Icons.arrow_back, color: Colors.white, size: 20),
-                SizedBox(width: 4),
-                Text('뒤로', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              ],
-            ),
-          ),
-          // 2. 제목 위아래 간격을 조절하여 높이를 세밀하게 맞춥니다.
-          const SizedBox(height: 5),
-          const Center(
-            child: Text(
-              '이상 행동 일기',
-              style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-          ),
-          const SizedBox(height: 4),
-          const Center(
-            child: Text(
-              '2026년 2월 6일 목요일',
-              style: TextStyle(color: Colors.white, fontSize: 14),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+        const Text(
+          '2026년 2월 6일 목요일',
+          style: TextStyle(color: Colors.white70, fontSize: 10),
+        ),
+      ],
+    ),
+    centerTitle: true,
+  );
+}
 
   Widget _buildSectionTitle(IconData icon, String title, {String? badgeCount}) {
     return Row(

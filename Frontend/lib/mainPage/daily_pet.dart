@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:pet_diary/mainPage/pet_activity.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 class daily_pet extends StatelessWidget {
   const daily_pet({super.key});
@@ -10,25 +11,30 @@ class daily_pet extends StatelessWidget {
       backgroundColor: const Color(0xFFF9F9F9),
       // 상단 앱바 (이미지의 오렌지색 헤더 부분)
       appBar: AppBar(
-        backgroundColor: Colors.orange,
+        backgroundColor: Colors.blue,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('일상 행동 일기', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Column(
+          children: [
+            const Text('일상 행동 일기', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text('2026년 2월 6일 목요일', style: TextStyle(color: Colors.white70, fontSize: 12)),
+          ],
+        ),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
         child: Column(
           children: [
             // 1. 헤더 하단 정보 (날짜 등)
-            Container(
-              width: double.infinity,
-              color: Colors.orange,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-              child: const Text('2026년 2월 6일 목요일', style: TextStyle(color: Colors.white70, fontSize: 12)),
-            ),
+            // Container(
+            //   width: double.infinity,
+            //   color: Colors.orange,
+            //   padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+            //   child: const Text('2026년 2월 6일 목요일', style: TextStyle(color: Colors.white70, fontSize: 12)),
+            // ),
 
             Padding(
               padding: const EdgeInsets.all(16.0),
@@ -99,10 +105,10 @@ class daily_pet extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('평균 기분', style: TextStyle(color: Colors.grey, fontSize: 12)),
-              Text('즐거움', style: TextStyle(color: Colors.orange, fontSize: 20, fontWeight: FontWeight.bold)),
+              Text('즐거움', style: TextStyle(color: Colors.green, fontSize: 20, fontWeight: FontWeight.bold)),
             ],
           ),
-          Icon(Icons.sentiment_satisfied_alt, color: Colors.orange[300], size: 40),
+          Icon(Icons.sentiment_satisfied_alt, color: Colors.green[300], size: 30),
         ],
       ),
     );
@@ -114,7 +120,7 @@ class daily_pet extends StatelessWidget {
       children: [
         // 1. 대표 사진 (상단)
         Container(
-          height: 220,
+          height: 175.w,
           width: double.infinity,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(15),
@@ -127,13 +133,13 @@ class daily_pet extends StatelessWidget {
         ),
         const SizedBox(height: 12),
 
-        // 2. 하단 정사각형 4개 (테두리 제거됨)
+        // 2. 하단 정사각형 3개 (테두리 제거됨)
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: 4,
+          itemCount: 3,
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 4,     // 가로 4칸 고정
+            crossAxisCount: 3,     // 가로 4칸 고정
             crossAxisSpacing: 8,   // 간격
             mainAxisSpacing: 8,
             childAspectRatio: 1,   // 1:1 정사각형 비율
