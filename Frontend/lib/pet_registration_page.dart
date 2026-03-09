@@ -30,7 +30,7 @@ class _PetRegistrationPageState extends State<PetRegistrationPage> {
 
   // 사용자 입력 정보를 DB에 저장하는 함수
   Future<void> _savePetInfo() async {
-    final Uri url = Uri.parse('http://localhost:8000/user-input/${widget.userId}');
+    final Uri url = Uri.parse('http://localhost:8080/user-input/${widget.userId}');
 
     try {
       final response = await http.post(

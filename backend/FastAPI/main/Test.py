@@ -160,6 +160,11 @@ class PetInfo(BaseModel):
     
 @app.post("/user-input/{user_id}")
 def save_pet_info(user_id: str, data: PetInfo):
+    # 파이어베이스에도 pet_info 저장
+    ref = firebase_db.reference(f'users/{user_id}')
+    ref.update({"pet_info": data.model_dump()})
+
+    # MongoDB에도 저장
     db_client = get_db()
     # Update user document with pet_info in MongoDB
     result = db_client["users"].update_one(
