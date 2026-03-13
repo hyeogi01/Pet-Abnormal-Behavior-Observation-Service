@@ -299,7 +299,7 @@ async def get_daily_diary(user_id: str, date: str = None):
     """
     try:
         diary_content = generate_daily_diary(user_id, date)
-        if "오류" in diary_content or "어렵습니다" in diary_content:
+        if any(keyword in diary_content for keyword in ["오류", "어렵습니다", "초기화되지 않았습니다", "실패"]):
             return {"status": "error", "message": diary_content}
         
         return {

@@ -37,7 +37,7 @@ class _DailyPetState extends State<daily_pet> {
     final String userId = widget.userId ?? 'test_user';
     final String petType = widget.petData?['pet_type'] ?? 'dog';
     final String today = DateTime.now().toIso8601String().substring(0, 10); // YYYY-MM-DD
-    final String baseUrl = 'http://localhost:8000';
+    final String baseUrl = 'http://localhost:8080';
 
     setState(() {
       _isSaving = true;
