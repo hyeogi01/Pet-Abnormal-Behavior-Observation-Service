@@ -46,39 +46,27 @@ class _DailyPetState extends State<daily_pet> {
     });
 
     try {
-      // 1. 행동/감정/사운드 데이터를 Firebase에 저장
-      //    (더미 영상 대신 analysis_result만 직접 저장하는 편의 엔드포인트를 사용)
-      //    → 실제 서비스에서는 /api/daily-behavior에 영상을 올리고 AI가 분석하지만,
-      //      여기서는 POST /api/save-log 로 분석 결과 직접 저장 (테스트 목적)
-      final logBody = jsonEncode({
-        "user_id": userId,
-        "pet_type": petType,
-        "timestamp": DateTime.now().toIso8601String(),
-        "analysis_result": _dummyAnalysisResult
-      });
-
-      final logRes = await http.post(
-        Uri.parse('$baseUrl/api/save-log'),
-        headers: {'Content-Type': 'application/json'},
-        body: logBody,
+      // 1. 전체 시뮬레이션 요청 (24개 데이터 저장 + 일기 생성)
+      //    이 엔드포인트는 백엔드에서 sample1.mp4를 24개로 나눠 분석하고 Firebase에 저장한 뒤 일기를 생성합니다.
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/simulate-full-day'),
+        body: {
+          "user_id": userId,
+          "pet_type": petType == '강아지' ? 'dog' : 'cat', // 엔진 호환을 위해 변환
+        },
       );
-
-      if (logRes.statusCode != 200) {
-        throw Exception('로그 저장 실패: ${logRes.body}');
+      
+      if (response.statusCode != 200) {
+        throw Exception('시뮬레이션 요청 실패: ${response.body}');
       }
 
-      // 2. LLM 일기 생성 요청
-      final diaryRes = await http.get(
-        Uri.parse('$baseUrl/api/daily-diary/$userId?date=$today'),
-      );
-
-      if (diaryRes.statusCode != 200) {
-        throw Exception('일기 생성 실패: ${diaryRes.body}');
+      final resultJson = jsonDecode(utf8.decode(response.bodyBytes));
+      if (resultJson['status'] == 'error') {
+        throw Exception(resultJson['message']);
       }
 
-      final diaryJson = jsonDecode(utf8.decode(diaryRes.bodyBytes));
       setState(() {
-        _diaryContent = diaryJson['diary'] ?? '일기 내용을 불러올 수 없습니다.';
+        _diaryContent = resultJson['diary'] ?? '일기 내용을 불러올 수 없습니다.';
       });
 
       if (context.mounted) {

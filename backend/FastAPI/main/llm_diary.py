@@ -65,10 +65,10 @@ def generate_daily_diary(user_id: str, target_date: str = None) -> str:
     except Exception:
         pet_type = "반려동물"
 
-    # Sample at most 15 logs to prevent Groq token limit errors
+    # Sample at most 30 logs to prevent Groq token limit errors (increased from 15 to accommodate 24 points)
     import random
-    if len(logs) > 15:
-        sampled_logs = random.sample(logs, 15)
+    if len(logs) > 30:
+        sampled_logs = random.sample(logs, 30)
         sampled_logs.sort(key=lambda x: x.get("_time_key", ""))
     else:
         sampled_logs = logs

@@ -215,50 +215,52 @@ def analyze_daily_behavior(
     import traceback
     try:
         contents = file.file.read()
-        print(f"Received video: len={len(contents)} timestamp={timestamp}", flush=True)
+        filename = file.filename.lower()
+        is_image = filename.endswith(('.jpg', '.jpeg', '.png'))
         
-        # 1. Daily Behavior & Sound Inference (Analyze full clip)
-        print("Starting AI inference...", flush=True)
-        ai_result = daily_behavior_engine.analyze_clip(contents, pet_type)
-        print("Completed AI inference.", flush=True)
+        print(f"Received file: {filename}, len={len(contents)} timestamp={timestamp}", flush=True)
+        
+        if is_image:
+            # 1. Image Inference
+            print("Starting image AI inference...", flush=True)
+            ai_result = daily_behavior_engine.analyze_image(contents, pet_type)
+            image_bytes = contents
+            print("Completed image AI inference.", flush=True)
+        else:
+            # 1. Video Clip Inference
+            print("Starting video AI inference...", flush=True)
+            ai_result = daily_behavior_engine.analyze_clip(contents, pet_type)
+            print("Completed video AI inference.", flush=True)
 
-        # 2. Extract ONLY ONE frame to upload to MinIO to save storage costs
-        print("Extracting frame...", flush=True)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4", mode="wb") as tmp_file:
-            tmp_file.write(contents)
-            temp_video_path = tmp_file.name
+            # 2. Extract ONLY ONE frame for video
+            print("Extracting frame from video...", flush=True)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4", mode="wb") as tmp_file:
+                tmp_file.write(contents)
+                temp_video_path = tmp_file.name
 
-        cap = cv2.VideoCapture(temp_video_path)
-        ret, frame = cap.read()
-        cap.release()
-        os.remove(temp_video_path)
-        print(f"Extracted frame successfully. Ret: {ret}", flush=True)
+            cap = cv2.VideoCapture(temp_video_path)
+            ret, frame = cap.read()
+            cap.release()
+            os.remove(temp_video_path)
+            
+            if ret:
+                _, buffer = cv2.imencode('.jpg', frame)
+                image_bytes = buffer.tobytes()
+            else:
+                image_bytes = b""
 
+        # 3. Upload image to MinIO
         minio_client = get_minio_client()
         object_name = f"{user_id}/{uuid.uuid4()}.jpg"
         
-        if ret:
-             # Encode image
-             _, buffer = cv2.imencode('.jpg', frame)
-             image_bytes = buffer.tobytes()
-             minio_client.put_object(
-                 DAILY_BEHAVIOR_BUCKET,
-                 object_name,
-                 io.BytesIO(image_bytes),
-                 length=len(image_bytes),
-                 content_type="image/jpeg"
-             )
-        else:
-             # Fallback if frame read fails (e.g. empty video)
-             minio_client.put_object(
-                 DAILY_BEHAVIOR_BUCKET,
-                 object_name,
-                 io.BytesIO(b""),
-                 length=0,
-                 content_type="image/jpeg"
-             )
+        minio_client.put_object(
+            DAILY_BEHAVIOR_BUCKET,
+            object_name,
+            io.BytesIO(image_bytes),
+            length=len(image_bytes),
+            content_type="image/jpeg"
+        )
         
-        # We store the image URL instead of video URL
         image_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
         
         # Determine timestamp
@@ -270,9 +272,9 @@ def analyze_daily_behavior(
         else:
             log_time = datetime.datetime.now()
 
-        # 3. Save to Firebase RTDB: users/{user_id}/day/{date}/{time}/ → only timestamp + image_url + analysis_result
+        # 4. Save to Firebase RTDB
         date_str = log_time.strftime("%Y-%m-%d")
-        time_str = log_time.strftime("%H:%M:%S")  # 분석 시각 (HH:MM:SS)
+        time_str = log_time.strftime("%H:%M:%S")
         ref = firebase_db.reference(f'users/{user_id}/day/{date_str}/{time_str}')
         ref.set({
             "image_url": image_url,
@@ -281,13 +283,121 @@ def analyze_daily_behavior(
         
         return {
             "status": "success",
-            "message": "Routine behavior analyzed and ONE frame saved successfully",
+            "message": "Daily analysis saved successfully",
             "video_url": image_url,
             "ai_inference": ai_result
         }
         
     except Exception as e:
         return {"status": "error", "message": f"Daily behavior processing error: {str(e)}"}
+
+@app.post("/api/simulate-full-day")
+async def simulate_full_day(
+    user_id: str = Form(...),
+    pet_type: str = Form(...)
+):
+    """
+    SIMULATION ONLY: Extracts 24 frames from sample1.mp4, analyzes them,
+    saves to DB, and returns a generated LLM diary.
+    """
+    import os
+    import cv2
+    import uuid
+    import tempfile
+    import datetime
+    import io
+    
+    # Use a unique local name to avoid shadowing global VIDEO_PATH
+    SIM_SAMPLE_FILE = "sample1.mp4" 
+    sim_possible_paths = [
+        SIM_SAMPLE_FILE,
+        os.path.join(os.path.dirname(__file__), SIM_SAMPLE_FILE),
+        os.path.join(os.path.dirname(__file__), "..", "..", SIM_SAMPLE_FILE),
+        "/app/sample1.mp4"
+    ]
+    
+    sim_found_path = None
+    for p in sim_possible_paths:
+        if os.path.exists(p):
+            sim_found_path = p
+            break
+            
+    if not sim_found_path:
+        return {"status": "error", "message": f"Sample video not found. Tried: {sim_possible_paths}"}
+    
+    target_video = sim_found_path
+
+    try:
+        print(f"Starting simulation for user {user_id} using {target_video}")
+        sim_cap = cv2.VideoCapture(target_video)
+        if not sim_cap.isOpened():
+            print(f"Error: Could not open {target_video}")
+            return {"status": "error", "message": "Could not open sample video"}
+
+        sim_total_frames = int(sim_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        print(f"Total frames in video: {sim_total_frames}")
+        NUM_SIM_CHUNKS = 24
+        sim_stride = max(1, sim_total_frames // NUM_SIM_CHUNKS)
+        
+        sim_today = datetime.datetime.now().strftime("%Y-%m-%d")
+        minio_client = get_minio_client()
+
+        for i in range(NUM_SIM_CHUNKS):
+            f_idx = i * sim_stride
+            sim_cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
+            success, sim_frame = sim_cap.read()
+            if not success: 
+                print(f"Warning: Could not read frame at index {f_idx}")
+                continue
+            
+            # Encode frame
+            _, sim_buffer = cv2.imencode('.jpg', sim_frame)
+            sim_image_bytes = sim_buffer.tobytes()
+            
+            # 1. AI Analysis
+            print(f"Analyzing frame {i+1}/24 (pet_type={pet_type})...")
+            sim_ai_result = daily_behavior_engine.analyze_image(sim_image_bytes, pet_type)
+            
+            # 2. MinIO Upload
+            object_name = f"{user_id}/sim_{uuid.uuid4()}.jpg"
+            minio_client.put_object(
+                DAILY_BEHAVIOR_BUCKET,
+                object_name,
+                io.BytesIO(sim_image_bytes),
+                length=len(sim_image_bytes),
+                content_type="image/jpeg"
+            )
+            image_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
+            
+            # 3. Firebase Save
+            chunk_time = datetime.datetime.now().replace(hour=i % 24, minute=0, second=0, microsecond=0)
+            time_str = chunk_time.strftime("%H:%M:%S")
+            full_timestamp = chunk_time.isoformat()
+            
+            ref = firebase_db.reference(f'users/{user_id}/day/{sim_today}/{time_str}')
+            ref.set({
+                "video_url": image_url, # Gallery currently looks for video_url
+                "image_url": image_url,
+                "timestamp": full_timestamp,
+                "analysis_result": sim_ai_result
+            })
+            
+        sim_cap.release()
+        print(f"Simulation loop successfully finished for {user_id}")
+        
+        # 4. Generate Diary
+        diary_content = generate_daily_diary(user_id, sim_today)
+        
+        return {
+            "status": "success",
+            "message": "Full day simulation completed and diary generated",
+            "diary": diary_content
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": f"Simulation failed: {str(e)}"}
 
 # ─────────────────────────── PHASE 3: AI DIARY & STATISTICS ───────────────────────────
 
@@ -377,10 +487,14 @@ def get_video_gallery(user_id: str):
                         except ValueError:
                             display_time = timestamp_str
 
+                    url = doc.get("video_url") or doc.get("image_url", "")
+                    url = url.replace("minio:9000", "localhost:9000")
+                    
                     gallery_items.append({
                         "timestamp": display_time,
-                        "video_url": doc.get("video_url", "").replace("minio:9000", "localhost:9000"),
+                        "video_url": url,
                         "emotion": emotion,
+                        "is_image": "video_url" not in doc,
                         "_raw_time": timestamp_str
                     })
                 
