@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'diary_detail.dart';
+import 'daily_pet.dart';
+import '../main.dart'; // petData 등에 접근하기 위해 필요할 수 있으나userId와 initialDate 위주로 처리
 class DiaryListPage extends StatefulWidget {
   final String userId;
   const DiaryListPage({super.key, required this.userId});
@@ -84,7 +86,11 @@ class _DiaryListPageState extends State<DiaryListPage> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => DiaryDetailPage(diaryData: fullData),
+            builder: (context) => daily_pet(
+              petData: null, // 필요 시 상위에서 넘겨받거나 로컬에서 fetch
+              userId: widget.userId,
+              initialDate: date,
+            ),
           ),
         );
       },

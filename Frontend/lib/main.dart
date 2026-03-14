@@ -229,17 +229,24 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
                   : Column(
                       children: recentDiaries.map((diaryItem) {
                         return GestureDetector(
-                          onTap: () {
-                            Navigator.push(
+                          onTap: () async {
+                            final result = await Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (context) => DiaryDetailPage(diaryData: diaryItem)),
+                              MaterialPageRoute(
+                                builder: (context) => daily_pet(
+                                  petData: petData,
+                                  userId: widget.userId,
+                                  initialDate: diaryItem['date'], // 클릭한 일기의 날짜 전달
+                                ),
+                              ),
                             );
+                            if (result == true) _refreshDashboard();
                           },
                           child: _buildDiaryItem(
                             diaryItem['date'] ?? '알 수 없는 날짜',
-                            '최신 일기', // 혹은 요일 계산 로직
-                            90, // 임시 활동 점수
-                            false, // 임시 warning 로직
+                            '최신 일기', 
+                            90, 
+                            false, 
                             diaryItem['content'] ?? '내용 없음',
                           ),
                         );

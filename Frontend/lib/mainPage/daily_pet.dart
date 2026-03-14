@@ -5,8 +5,9 @@ import 'package:http/http.dart' as http;
 class daily_pet extends StatefulWidget {
   final Map<String, dynamic>? petData;
   final String? userId;
+  final String? initialDate; // 특정 날짜 (YYYY-MM-DD), 없으면 오늘
 
-  const daily_pet({super.key, required this.petData, this.userId});
+  const daily_pet({super.key, required this.petData, this.userId, this.initialDate});
 
   @override
   State<daily_pet> createState() => _DailyPetState();
@@ -15,40 +16,84 @@ class daily_pet extends StatefulWidget {
 class _DailyPetState extends State<daily_pet> {
   bool _isSaving = false;
   bool _isLoadingStats = true;
+  bool _isLoadingDiary = false;
   String? _diaryContent;
   String? _errorMessage;
   Map<String, double> _emotionStats = {};
   String _avgMood = "분석 중";
   Color _moodColor = Colors.grey;
   IconData _moodIcon = Icons.sentiment_neutral;
+  late String _currentDate;
 
   @override
   void initState() {
     super.initState();
-    _fetchDailyStats();
+    _currentDate = widget.initialDate ?? DateTime.now().toIso8601String().substring(0, 10);
+    _fetchData();
+  }
+
+  Future<void> _fetchData() async {
+    setState(() {
+      _isLoadingStats = true;
+      _isLoadingDiary = true;
+    });
+    await Future.wait([
+      _fetchDailyStats(),
+      _fetchSavedDiary(),
+    ]);
+    setState(() {
+      _isLoadingStats = false;
+      _isLoadingDiary = false;
+    });
   }
 
   Future<void> _fetchDailyStats() async {
     final String userId = widget.userId ?? 'test_user';
-    final String today = DateTime.now().toIso8601String().substring(0, 10);
     final String baseUrl = 'http://localhost:8080';
 
     try {
-      final response = await http.get(Uri.parse('$baseUrl/api/daily-stats/$userId?date=$today'));
+      final response = await http.get(Uri.parse('$baseUrl/api/daily-stats/$userId?date=$_currentDate'));
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
         if (result['status'] == 'success') {
           final stats = Map<String, double>.from(result['data'] ?? {});
           setState(() {
             _emotionStats = stats;
-            _isLoadingStats = false;
             _updateAverageMood();
           });
         }
       }
     } catch (e) {
       print("Error fetching stats: $e");
-      setState(() => _isLoadingStats = false);
+    }
+  }
+
+  Future<void> _fetchSavedDiary() async {
+    final String userId = widget.userId ?? 'test_user';
+    final String baseUrl = 'http://localhost:8080';
+
+    try {
+      // 해당 날짜의 일기가 이미 있는지 확인하는 API 호출 (기존 리스트 API 사용)
+      final response = await http.get(Uri.parse('$baseUrl/api/daily-diaries/$userId?limit=0'));
+      if (response.statusCode == 200) {
+        final result = jsonDecode(response.body);
+        if (result['status'] == 'success') {
+          final List diaries = result['data'] ?? [];
+          // 해당 날짜와 일치하는 일기 찾기
+          final diary = diaries.firstWhere((d) => d['date'] == _currentDate, orElse: () => null);
+          if (diary != null) {
+            setState(() {
+              _diaryContent = diary['content'];
+            });
+          } else {
+             setState(() {
+              _diaryContent = null;
+            });
+          }
+        }
+      }
+    } catch (e) {
+      print("Error fetching diary: $e");
     }
   }
 
@@ -88,6 +133,15 @@ class _DailyPetState extends State<daily_pet> {
   }
 
   Future<void> _saveDiaryAndGenerate() async {
+    // 과거 날짜인 경우 생성 방지 (선택 사항)
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    if (_currentDate != today) {
+       ScaffoldMessenger.of(context).showSnackBar(
+         const SnackBar(content: Text("과거 날짜의 일기는 다시 생성할 수 없습니다."))
+       );
+       return;
+    }
+
     final String userId = widget.userId ?? 'test_user';
     final String petType = widget.petData?['pet_type'] ?? 'dog';
     final String baseUrl = 'http://localhost:8080';
@@ -95,7 +149,6 @@ class _DailyPetState extends State<daily_pet> {
     setState(() {
       _isSaving = true;
       _errorMessage = null;
-      _diaryContent = null;
     });
 
     try {
@@ -132,8 +185,8 @@ class _DailyPetState extends State<daily_pet> {
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.pop(ctx); // 다이얼로그 닫기
-              Navigator.pop(context, true); // 페이지 닫으면서 true 반환 (메인 화면 갱신 트리거)
+              Navigator.pop(ctx);
+              Navigator.pop(context, true); 
             },
             child: const Text('확인'),
           )
@@ -145,12 +198,18 @@ class _DailyPetState extends State<daily_pet> {
   @override
   Widget build(BuildContext context) {
     final String petName = widget.petData?['pet_name'] ?? '콩이';
+    final bool isToday = _currentDate == DateTime.now().toIso8601String().substring(0, 10);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF9F9F9),
       appBar: AppBar(
         backgroundColor: Colors.blue,
         elevation: 0,
-        title: const Text('일상 행동 일기', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(' AI 행동 관찰 일기 ($_currentDate)', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
@@ -176,11 +235,21 @@ class _DailyPetState extends State<daily_pet> {
               _buildTeacherAdviceCard(petName),
               const SizedBox(height: 24),
 
-              _buildSectionTitle('보호자 메모'),
-              _buildMemoField(),
-              const SizedBox(height: 30),
-
-              _buildBottomButton(context),
+              // 오늘일 때만 메모와 버튼 표시
+              if (isToday) ...[
+                _buildSectionTitle('보호자 메모'),
+                _buildMemoField(),
+                const SizedBox(height: 30),
+                _buildBottomButton(context),
+              ] else ...[
+                 Center(
+                   child: Text(
+                     '과거의 기록을 조회 중입니다.',
+                     style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                   ),
+                 ),
+                 const SizedBox(height: 40),
+              ],
             ],
           ),
         ),
@@ -205,7 +274,12 @@ class _DailyPetState extends State<daily_pet> {
     }
 
     if (_emotionStats.isEmpty) {
-      return const SizedBox.shrink();
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15)),
+        child: const Center(child: Text("측정된 감정 데이터가 없습니다.", style: TextStyle(color: Colors.grey, fontSize: 13))),
+      );
     }
 
     final Map<String, Color> emotionColors = {
@@ -341,17 +415,25 @@ class _DailyPetState extends State<daily_pet> {
   }
 
   Widget _buildAISummaryCard(String petName) {
+    if (_isLoadingDiary) {
+       return Container(
+        height: 60,
+        alignment: Alignment.center,
+        child: const CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
     return Container(
       padding: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(color: const Color(0xFFF0F5FF), borderRadius: BorderRadius.circular(12)),
       child: Text(
-        _diaryContent ?? '오늘 $petName의 활동 내역을 기반으로 일기가 생성됩니다.',
+        _diaryContent ?? '해당 날짜에 생성된 일기가 없습니다.',
         style: const TextStyle(color: Colors.blueGrey, fontSize: 13, height: 1.5),
       ),
     );
   }
 
   Widget _buildTeacherAdviceCard(String petName) {
+    if (_emotionStats.isEmpty) return const SizedBox.shrink();
     return Container(
       padding: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
@@ -373,7 +455,7 @@ class _DailyPetState extends State<daily_pet> {
             padding: const EdgeInsets.all(12.0),
             decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
             child: Text(
-              '분석 결과, 오늘 $petName는 평소보다 $_avgMood한 상태를 많이 보였습니다. 보호자님의 따뜻한 관심이 필요합니다.',
+              '분석 결과, 이 날 $petName는 평소보다 $_avgMood한 상태를 많이 보였습니다. 보호자님의 따뜻한 관심이 필요합니다.',
               style: const TextStyle(color: Colors.white, fontSize: 12),
             ),
           ),
@@ -404,7 +486,7 @@ class _DailyPetState extends State<daily_pet> {
         onPressed: _isSaving ? null : _saveDiaryAndGenerate,
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.orange,
-          disabledBackgroundColor: Colors.orange.shade800, // 비활성화 시 약간 더 어두운 색상
+          disabledBackgroundColor: Colors.orange.shade800,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         child: _isSaving
