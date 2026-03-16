@@ -47,16 +47,31 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
   // 2. Fetch recent diaries
   List<dynamic> recentDiaries = [];
   bool isDiaryLoading = true;
-  final String baseUrl = "http://localhost:8080"; // !IMPORTANT: 안드로이드 실기기 IP 입력 부분 (예: 192.168.0.X:8080)
+  final String baseUrl = "http://localhost:8080"; 
 
   @override
   void initState() {
     super.initState();
-    _fetchPetInfo();
-    _fetchRecentDiaries();
+    _refreshDashboard();
   }
+
+  Future<void> _refreshDashboard() async {
+    setState(() {
+      isLoading = true;
+      isDiaryLoading = true;
+    });
+    await Future.wait([
+      _fetchPetInfo(),
+      _fetchRecentDiaries(),
+    ]);
+    setState(() {
+      isLoading = false;
+      isDiaryLoading = false;
+    });
+  }
+
   Future<void> _fetchPetInfo() async {
-    final url = Uri.parse('http://localhost:8080/user-pet-info/${widget.userId}');
+    final url = Uri.parse('$baseUrl/user-pet-info/${widget.userId}');
 
     try {
       final response = await http.get(url);
@@ -167,7 +182,12 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
           Row(
             children: [
               _buildActionButton(Icons.book, '일상 일기', '기분 & 활동량', Colors.blue,
-                      () => Navigator.push(context, MaterialPageRoute(builder: (context) => daily_pet(petData: petData, userId: widget.userId)))),
+                      () async {
+                        final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => daily_pet(petData: petData, userId: widget.userId)));
+                        if (result == true) {
+                          _refreshDashboard(); // Refresh everything if a diary was generated
+                        }
+                      }),
               SizedBox(width: 8),
               _buildActionButton(Icons.error_outline, '이상 행동', '건강 체크', Colors.orange,
                       () => Navigator.push(context, MaterialPageRoute(builder: (context) => PageB()))),
@@ -209,17 +229,24 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
                   : Column(
                       children: recentDiaries.map((diaryItem) {
                         return GestureDetector(
-                          onTap: () {
-                            Navigator.push(
+                          onTap: () async {
+                            final result = await Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (context) => DiaryDetailPage(diaryData: diaryItem)),
+                              MaterialPageRoute(
+                                builder: (context) => daily_pet(
+                                  petData: petData,
+                                  userId: widget.userId,
+                                  initialDate: diaryItem['date'], // 클릭한 일기의 날짜 전달
+                                ),
+                              ),
                             );
+                            if (result == true) _refreshDashboard();
                           },
                           child: _buildDiaryItem(
                             diaryItem['date'] ?? '알 수 없는 날짜',
-                            '최신 일기', // 혹은 요일 계산 로직
-                            90, // 임시 활동 점수
-                            false, // 임시 warning 로직
+                            '최신 일기', 
+                            90, 
+                            false, 
                             diaryItem['content'] ?? '내용 없음',
                           ),
                         );

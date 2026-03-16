@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import io
 import datetime
 import uuid
+import tempfile
 
 # AI Inference module import
 from FastAPI.main.model_inference import ai_engine
@@ -20,18 +21,26 @@ from FastAPI.main.statistics import get_weekly_statistics
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Load AI models
-    print("Initializing AI Models...")
-    ai_engine.load_models()
+    # Startup: Load AI models in background to avoid blocking login/signup
+    import threading
     
-    # Initialize Daily Behavior Engine
-    daily_behavior_engine.load_models()
+    def load_models_concurrently():
+        print("[INIT] Startup: Loading heavy AI models in background...")
+        try:
+            ai_engine.load_models()
+            daily_behavior_engine.load_models()
+            print("[INIT] Startup: All AI models loaded successfully and ready.")
+        except Exception as e:
+            print(f"[INIT] Startup Error: Failed to load models in background: {e}")
+
+    # Start loading in a separate thread
+    load_thread = threading.Thread(target=load_models_concurrently)
+    load_thread.start()
     
-    # Initialize DB Connections
+    # Initialize DB (fast)
     get_minio_client()
     
     yield
-    # Shutdown
     print("Shutting down...")
 
 app = FastAPI(lifespan=lifespan)
@@ -50,6 +59,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/ready/")
+def check_ready():
+    # Return loading status of the daily behavior engine (it includes omni models)
+    return {
+        "status": "ready" if daily_behavior_engine.is_loaded else "loading",
+        "detail": "AI models are still initializing in the background." if not daily_behavior_engine.is_loaded else "All systems ready."
+    }
 
 # 사용자 로그인
 class User(BaseModel):
@@ -297,17 +314,15 @@ async def simulate_full_day(
     pet_type: str = Form(...)
 ):
     """
-    SIMULATION ONLY: Extracts 24 frames from sample1.mp4, analyzes them,
+    SIMULATION ONLY: Extracts 24 clips (4s each) from sample1.mp4, analyzes them,
     saves to DB, and returns a generated LLM diary.
     """
     import os
-    import cv2
     import uuid
-    import tempfile
     import datetime
     import io
+    from moviepy import VideoFileClip
     
-    # Use a unique local name to avoid shadowing global VIDEO_PATH
     SIM_SAMPLE_FILE = "sample1.mp4" 
     sim_possible_paths = [
         SIM_SAMPLE_FILE,
@@ -323,74 +338,122 @@ async def simulate_full_day(
             break
             
     if not sim_found_path:
-        return {"status": "error", "message": f"Sample video not found. Tried: {sim_possible_paths}"}
+         # Local check as fallback
+        if os.path.exists("backend/sample1.mp4"): sim_found_path = "backend/sample1.mp4"
+        else: return {"status": "error", "message": f"Sample video not found. Tried: {sim_possible_paths}"}
     
     target_video = sim_found_path
+    normalized_pt = pet_type.lower().strip()
 
     try:
-        print(f"Starting simulation for user {user_id} using {target_video}")
-        sim_cap = cv2.VideoCapture(target_video)
-        if not sim_cap.isOpened():
-            print(f"Error: Could not open {target_video}")
-            return {"status": "error", "message": "Could not open sample video"}
-
-        sim_total_frames = int(sim_cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        print(f"Total frames in video: {sim_total_frames}")
+        print(f"Starting simulation for user {user_id} using {target_video} (PT={normalized_pt})")
+        full_clip = VideoFileClip(target_video)
+        duration = full_clip.duration
+        
         NUM_SIM_CHUNKS = 24
-        sim_stride = max(1, sim_total_frames // NUM_SIM_CHUNKS)
+        sim_stride = max(1, duration // NUM_SIM_CHUNKS)
         
         sim_today = datetime.datetime.now().strftime("%Y-%m-%d")
         minio_client = get_minio_client()
 
         for i in range(NUM_SIM_CHUNKS):
-            f_idx = i * sim_stride
-            sim_cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
-            success, sim_frame = sim_cap.read()
-            if not success: 
-                print(f"Warning: Could not read frame at index {f_idx}")
-                continue
+            center_t = i * sim_stride
+            start_t = max(0, center_t - 2)
+            end_t = min(duration, center_t + 2)
             
-            # Encode frame
-            _, sim_buffer = cv2.imencode('.jpg', sim_frame)
-            sim_image_bytes = sim_buffer.tobytes()
+            print(f"[{i+1}/24] Extracting clip {start_t:.1f}s - {end_t:.1f}s...")
             
-            # 1. AI Analysis
-            print(f"Analyzing frame {i+1}/24 (pet_type={pet_type})...")
-            sim_ai_result = daily_behavior_engine.analyze_image(sim_image_bytes, pet_type)
+            # Temporary file for the 4s clip
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_clip_file:
+                tmp_clip_path = tmp_clip_file.name
             
-            # 2. MinIO Upload
+            sub_clip = full_clip.subclipped(start_t, end_t)
+            sub_clip.write_videofile(tmp_clip_path, codec="libx264", audio_codec="aac", logger=None)
+            
+            with open(tmp_clip_path, "rb") as f:
+                clip_bytes = f.read()
+            
+            # 1. AI Analysis (Clip Analysis)
+            print(f"Analyzing clip {i+1}/24 (pet_type={normalized_pt})...")
+            sim_ai_result = daily_behavior_engine.analyze_clip(clip_bytes, normalized_pt)
+            
+            # 2. Extract ONE frame for thumbnail
+            import cv2
+            cap = cv2.VideoCapture(tmp_clip_path)
+            ret, frame = cap.read()
+            cap.release()
+            
+            if ret:
+                _, buffer = cv2.imencode('.jpg', frame)
+                thumb_image_bytes = buffer.tobytes()
+            else:
+                thumb_image_bytes = b""
+
+            # 3. MinIO Upload (Thumbnail image)
             object_name = f"{user_id}/sim_{uuid.uuid4()}.jpg"
             minio_client.put_object(
                 DAILY_BEHAVIOR_BUCKET,
                 object_name,
-                io.BytesIO(sim_image_bytes),
-                length=len(sim_image_bytes),
+                io.BytesIO(thumb_image_bytes),
+                length=len(thumb_image_bytes),
                 content_type="image/jpeg"
             )
             image_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
             
-            # 3. Firebase Save
+            # 3-1. Extract Audio to MP3
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio_file:
+                tmp_audio_path = tmp_audio_file.name
+            
+            try:
+                if sub_clip.audio is not None:
+                    sub_clip.audio.write_audiofile(tmp_audio_path, logger=None)
+                    with open(tmp_audio_path, "rb") as f:
+                        audio_bytes = f.read()
+                    
+                    # 3-2. Upload MP3 to MinIO
+                    audio_object_name = f"{user_id}/sim_{uuid.uuid4()}.mp3"
+                    minio_client.put_object(
+                        DAILY_BEHAVIOR_BUCKET,
+                        audio_object_name,
+                        io.BytesIO(audio_bytes),
+                        length=len(audio_bytes),
+                        content_type="audio/mpeg"
+                    )
+                    audio_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{audio_object_name}"
+                else:
+                    audio_url = ""
+            except Exception as ae:
+                print(f"Audio extraction/upload error: {ae}")
+                audio_url = ""
+            finally:
+                if os.path.exists(tmp_audio_path):
+                    os.remove(tmp_audio_path)
+
+            # 4. Firebase Save
             chunk_time = datetime.datetime.now().replace(hour=i % 24, minute=0, second=0, microsecond=0)
             time_str = chunk_time.strftime("%H:%M:%S")
             full_timestamp = chunk_time.isoformat()
             
             ref = firebase_db.reference(f'users/{user_id}/day/{sim_today}/{time_str}')
             ref.set({
-                "video_url": image_url, # Gallery currently looks for video_url
-                "image_url": image_url,
+                "video_url": audio_url, # Now pointing to MP3 for verification
+                "image_url": image_url, # Still pointing to thumbnail
                 "timestamp": full_timestamp,
                 "analysis_result": sim_ai_result
             })
             
-        sim_cap.release()
+            # Cleanup temp clip
+            os.remove(tmp_clip_path)
+            
+        full_clip.close()
         print(f"Simulation loop successfully finished for {user_id}")
         
-        # 4. Generate Diary
+        # 5. Generate Diary
         diary_content = generate_daily_diary(user_id, sim_today)
         
         return {
             "status": "success",
-            "message": "Full day simulation completed and diary generated",
+            "message": "Full day simulation (with Audio) completed and diary generated",
             "diary": diary_content
         }
         
@@ -436,7 +499,65 @@ async def get_pet_statistics(user_id: str, pet_type: str):
             "statistics": stats
         }
     except Exception as e:
-        return {"status": "error", "message": f"Statistics aggregation error: {str(e)}"}
+        return {"status": "error", "message": f"Stats error: {str(e)}"}
+
+@app.get("/api/daily-stats/{user_id}")
+def get_daily_emotion_stats(user_id: str, date: str = None):
+    """
+    특정 날짜의 감정 데이터를 집계하여 비율을 반환합니다.
+    """
+    if date is None:
+        date = datetime.datetime.now().strftime("%Y-%m-%d")
+        
+    try:
+        ref = firebase_db.reference(f'users/{user_id}/day/{date}')
+        logs = ref.get() or {}
+        
+        if not logs:
+            return {"status": "success", "data": {}}
+            
+        emotion_counts = {}
+        total_valid = 0
+        
+        # 감정 영문 -> 한글 매핑
+        MOOD_MAPPING = {
+            "happy": "행복",
+            "anxious": "불안",
+            "active": "활발",
+            "sad": "우울",
+            "angry": "화남",
+            "relaxed": "해피", # relaxed와 happy가 혼용될 수 있음
+            "bored": "심심",
+            "sleepy": "졸림",
+            "Unknown": "기타"
+        }
+        
+        for time_key, log in logs.items():
+            if not isinstance(log, dict): continue
+            res = log.get("analysis_result", {})
+            if res.get("status") == "success":
+                raw_emo = res.get("behavior_analysis", {}).get("emotion", "Unknown")
+                # pet_type 접두어 제거 (dog_happy -> happy)
+                clean_emo = raw_emo.split('_')[-1] if '_' in raw_emo else raw_emo
+                
+                translated = MOOD_MAPPING.get(clean_emo, clean_emo)
+                emotion_counts[translated] = emotion_counts.get(translated, 0) + 1
+                total_valid += 1
+                
+        # 비율 계산
+        emotion_stats = {}
+        if total_valid > 0:
+            for emo, count in emotion_counts.items():
+                emotion_stats[emo] = round((count / total_valid) * 100, 1)
+                
+        return {
+            "status": "success",
+            "date": date,
+            "total_count": total_valid,
+            "data": emotion_stats
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Stats error: {str(e)}"}
 
 @app.get("/api/daily-diaries/{user_id}")
 def fetch_diary_list(user_id: str, limit: int = 0):

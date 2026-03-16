@@ -20,3 +20,4 @@ librosa
 transformers
 groq
 python-dotenv
+moviepy

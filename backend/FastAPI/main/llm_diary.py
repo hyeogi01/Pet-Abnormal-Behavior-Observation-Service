@@ -108,9 +108,9 @@ def generate_daily_diary(user_id: str, target_date: str = None) -> str:
 [작성 지침]
 1. 당신은 보호자에게 반려동물의 행동과 상태를 다정하고 전문적으로 알려주는 행동 분석 선생님입니다.
 2. 어투는 반드시 선생님 말투 (예: "~했습니다", "~로 보입니다", "~군요", "~를 권장합니다" 등)를 확고하게 사용하세요.
-3. 보호자를 안심시키면서도, 주의가 필요한 부분(예: 슬개골 이상 의심 등)이 있다면 잘 짚어주세요.
-4. 너무 딱딱하지 않고, 동물의 사랑스러움이 묻어나는 따뜻한 톤을 유지하세요.
-5. 마크다운 형식을 최소화하고, 자연스러운 줄글 형태로 작성하세요.
+3. **가장 중요한 요점 위주로 딱 3문장 이내로만** 간결하게 작성하세요. (분량이 길어지지 않게 주의)
+4. 보호자를 안심시키면서도, 주의가 필요한 부분(슬개골 등)이 있다면 짧고 강력하게 언급하세요.
+5. 너무 딱딱하지 않고 따뜻한 톤을 유지하되, 군더더기 없는 문결을 유지하세요.
     """
 
     try:
@@ -118,16 +118,16 @@ def generate_daily_diary(user_id: str, target_date: str = None) -> str:
             messages=[
                 {
                     "role": "system",
-                    "content": "당신은 반려동물의 행동을 분석하고 보호자에게 알려주는 친절하고 전문적인 선생님입니다. 항상 한국어로 답변하며, 선생님 특유의 정중하고 따뜻한 말투(~했습니다, ~군요, ~를 권장합니다)를 사용해야 합니다."
+                    "content": "보호자를 안심시키면서도, 주의가 필요한 부분(슬개골 등)이 있다면 짧고 강력하게 언급하세요. 너무 딱딱하지 않고 따뜻한 톤을 유지하되, 군더더기 없는 문결을 유지하세요. 당신은 반려동물 행동 분석 선생님입니다. 답변은 반드시 한국어로, 선생님 말투(~했습니다, ~군요)를 사용하며, **가장 중요한 요점 위주로 반드시 3문장 이내로 매우 간결하게** 작성해야 합니다."
                 },
                 {
                     "role": "user",
                     "content": prompt,
                 }
             ],
-            model="llama-3.1-8b-instant",  # Updated to the newer 8B model on Groq
-            temperature=0.7,
-            max_tokens=1024,
+            model="llama-3.1-8b-instant",
+            temperature=0.7, # Reduced for more focused output
+            max_tokens=150,  # Strict limit to prevent long paragraphs
         )
         diary_content = response.choices[0].message.content
         
