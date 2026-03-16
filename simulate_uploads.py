@@ -6,7 +6,7 @@ import datetime
 import argparse
 
 # --- CONFIGURATION (DEFAULTS) ---
-VIDEO_PATH = "sample1.mp4" 
+VIDEO_PATH = "backend/sample1.mp4" 
 API_BASE = "http://localhost:8080"
 API_UPLOAD = f"{API_BASE}/api/daily-behavior"
 # ---------------------
