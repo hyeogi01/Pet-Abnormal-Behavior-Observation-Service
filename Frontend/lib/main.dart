@@ -47,16 +47,31 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
   // 2. Fetch recent diaries
   List<dynamic> recentDiaries = [];
   bool isDiaryLoading = true;
-  final String baseUrl = "http://localhost:8080"; // !IMPORTANT: 안드로이드 실기기 IP 입력 부분 (예: 192.168.0.X:8080)
+  final String baseUrl = "http://localhost:8080"; 
 
   @override
   void initState() {
     super.initState();
-    _fetchPetInfo();
-    _fetchRecentDiaries();
+    _refreshDashboard();
   }
+
+  Future<void> _refreshDashboard() async {
+    setState(() {
+      isLoading = true;
+      isDiaryLoading = true;
+    });
+    await Future.wait([
+      _fetchPetInfo(),
+      _fetchRecentDiaries(),
+    ]);
+    setState(() {
+      isLoading = false;
+      isDiaryLoading = false;
+    });
+  }
+
   Future<void> _fetchPetInfo() async {
-    final url = Uri.parse('http://localhost:8080/user-pet-info/${widget.userId}');
+    final url = Uri.parse('$baseUrl/user-pet-info/${widget.userId}');
 
     try {
       final response = await http.get(url);
@@ -170,7 +185,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
                       () async {
                         final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => daily_pet(petData: petData, userId: widget.userId)));
                         if (result == true) {
-                          _fetchRecentDiaries(); // Refresh list if a diary was generated
+                          _refreshDashboard(); // Refresh everything if a diary was generated
                         }
                       }),
               SizedBox(width: 8),

@@ -118,7 +118,7 @@ def generate_daily_diary(user_id: str, target_date: str = None) -> str:
             messages=[
                 {
                     "role": "system",
-                    "content": "당신은 반려동물 행동 분석 선생님입니다. 답변은 반드시 한국어로, 선생님 말투(~했습니다, ~군요)를 사용하며, **반드시 3문장 이내로 매우 간결하게** 작성해야 합니다."
+                    "content": "보호자를 안심시키면서도, 주의가 필요한 부분(슬개골 등)이 있다면 짧고 강력하게 언급하세요. 너무 딱딱하지 않고 따뜻한 톤을 유지하되, 군더더기 없는 문결을 유지하세요. 당신은 반려동물 행동 분석 선생님입니다. 답변은 반드시 한국어로, 선생님 말투(~했습니다, ~군요)를 사용하며, **가장 중요한 요점 위주로 반드시 3문장 이내로 매우 간결하게** 작성해야 합니다."
                 },
                 {
                     "role": "user",
@@ -126,8 +126,8 @@ def generate_daily_diary(user_id: str, target_date: str = None) -> str:
                 }
             ],
             model="llama-3.1-8b-instant",
-            temperature=0.5, # Reduced for more focused output
-            max_tokens=300,  # Strict limit to prevent long paragraphs
+            temperature=0.7, # Reduced for more focused output
+            max_tokens=150,  # Strict limit to prevent long paragraphs
         )
         diary_content = response.choices[0].message.content
         

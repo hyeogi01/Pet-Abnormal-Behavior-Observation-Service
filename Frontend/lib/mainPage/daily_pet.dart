@@ -130,7 +130,13 @@ class _DailyPetState extends State<daily_pet> {
         title: const Text('📖 오늘의 일기가 생성됐어요!'),
         content: SingleChildScrollView(child: Text(content)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('확인'))
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx); // 다이얼로그 닫기
+              Navigator.pop(context, true); // 페이지 닫으면서 true 반환 (메인 화면 갱신 트리거)
+            },
+            child: const Text('확인'),
+          )
         ],
       ),
     );
@@ -398,10 +404,18 @@ class _DailyPetState extends State<daily_pet> {
         onPressed: _isSaving ? null : _saveDiaryAndGenerate,
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.orange,
+          disabledBackgroundColor: Colors.orange.shade800, // 비활성화 시 약간 더 어두운 색상
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         child: _isSaving
-            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+            ? const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+                  SizedBox(width: 12),
+                  Text('일기 생성 중...', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ],
+              )
             : const Text('기록 저장 및 일기 생성', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
     );
