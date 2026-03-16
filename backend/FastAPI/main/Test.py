@@ -499,7 +499,65 @@ async def get_pet_statistics(user_id: str, pet_type: str):
             "statistics": stats
         }
     except Exception as e:
-        return {"status": "error", "message": f"Statistics aggregation error: {str(e)}"}
+        return {"status": "error", "message": f"Stats error: {str(e)}"}
+
+@app.get("/api/daily-stats/{user_id}")
+def get_daily_emotion_stats(user_id: str, date: str = None):
+    """
+    특정 날짜의 감정 데이터를 집계하여 비율을 반환합니다.
+    """
+    if date is None:
+        date = datetime.datetime.now().strftime("%Y-%m-%d")
+        
+    try:
+        ref = firebase_db.reference(f'users/{user_id}/day/{date}')
+        logs = ref.get() or {}
+        
+        if not logs:
+            return {"status": "success", "data": {}}
+            
+        emotion_counts = {}
+        total_valid = 0
+        
+        # 감정 영문 -> 한글 매핑
+        MOOD_MAPPING = {
+            "happy": "행복",
+            "anxious": "불안",
+            "active": "활발",
+            "sad": "우울",
+            "angry": "화남",
+            "relaxed": "해피", # relaxed와 happy가 혼용될 수 있음
+            "bored": "심심",
+            "sleepy": "졸림",
+            "Unknown": "기타"
+        }
+        
+        for time_key, log in logs.items():
+            if not isinstance(log, dict): continue
+            res = log.get("analysis_result", {})
+            if res.get("status") == "success":
+                raw_emo = res.get("behavior_analysis", {}).get("emotion", "Unknown")
+                # pet_type 접두어 제거 (dog_happy -> happy)
+                clean_emo = raw_emo.split('_')[-1] if '_' in raw_emo else raw_emo
+                
+                translated = MOOD_MAPPING.get(clean_emo, clean_emo)
+                emotion_counts[translated] = emotion_counts.get(translated, 0) + 1
+                total_valid += 1
+                
+        # 비율 계산
+        emotion_stats = {}
+        if total_valid > 0:
+            for emo, count in emotion_counts.items():
+                emotion_stats[emo] = round((count / total_valid) * 100, 1)
+                
+        return {
+            "status": "success",
+            "date": date,
+            "total_count": total_valid,
+            "data": emotion_stats
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Stats error: {str(e)}"}
 
 @app.get("/api/daily-diaries/{user_id}")
 def fetch_diary_list(user_id: str, limit: int = 0):
