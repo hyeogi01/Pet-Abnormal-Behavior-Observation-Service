@@ -6,12 +6,25 @@ import torch
 import librosa
 import numpy as np
 import tempfile
+import math
 import cv2
 import torch.nn as nn
 from PIL import Image
 import torchvision.transforms as transforms
 from torchvision.models import efficientnet_v2_s
 from transformers import Wav2Vec2ForSequenceClassification, Wav2Vec2FeatureExtractor
+
+def sanitize_data(data):
+    """Recursively replace NaN, Inf, -Inf with 0.0 in dicts and lists."""
+    if isinstance(data, dict):
+        return {k: sanitize_data(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [sanitize_data(v) for v in data]
+    elif isinstance(data, float):
+        if math.isnan(data) or math.isinf(data):
+            return 0.0
+        return data
+    return data
 
 # ───────────────────────────────── CONFIG ─────────────────────────────────────
 AUDIO_MODEL_NAME = "facebook/wav2vec2-base"
@@ -148,6 +161,14 @@ class DailyBehaviorEngine:
         self.dog_patella_model.eval()
         return True
 
+    def _safe_float(self, val):
+        try:
+            f = float(val)
+            if math.isnan(f) or math.isinf(f): return 0.0
+            return f
+        except:
+            return 0.0
+
     def load_models(self):
         print("Loading Daily Behavior Omni Models...")
         base_dir = "/app/AI_pth" if os.path.exists("/app/AI_pth") else "AI Model/AI_pth"
@@ -215,17 +236,25 @@ class DailyBehaviorEngine:
                 probs = torch.softmax(outputs, dim=1)
                 mean_probs = probs.mean(dim=0)
                 max_prob, max_idx = torch.max(mean_probs, dim=0)
-                return classes[max_idx.item()], round(max_prob.item(), 3)
+                return classes[max_idx.item()], self._safe_float(round(max_prob.item(), 3))
 
     def _infer_audio_model(self, model, audio_tensor, classes):
         if audio_tensor is None or audio_tensor.shape[0] == 0:
             return "Unknown", 0.0
-        with torch.no_grad():
-            with torch.amp.autocast("cuda" if "cuda" in self.device else "cpu"):
-                outputs = model(audio_tensor).logits
-                probs = torch.softmax(outputs, dim=1)
-                max_prob, max_idx = torch.max(probs[0], dim=0)
-                return classes[max_idx.item()], round(max_prob.item(), 3)
+        try:
+            with torch.no_grad():
+                with torch.amp.autocast("cuda" if "cuda" in self.device else "cpu"):
+                    outputs = model(audio_tensor).logits
+                    # Check for all-NaN or all-zero logits which might happen on silent audio
+                    if torch.isnan(outputs).any():
+                        return "Unknown", 0.0
+                        
+                    probs = torch.softmax(outputs, dim=1)
+                    max_prob, max_idx = torch.max(probs[0], dim=0)
+                    return classes[max_idx.item()], self._safe_float(round(max_prob.item(), 4))
+        except Exception as e:
+            print(f"[AI ENGINE] Audio inference error: {e}")
+            return "Unknown", 0.0
                 
     def _infer_patella_model(self, model, frames, classes):
         if frames is None or frames.shape[0] == 0:
@@ -239,53 +268,79 @@ class DailyBehaviorEngine:
                 probs = torch.softmax(outputs, dim=1)
                 mean_probs = probs.mean(dim=0)
                 max_prob, max_idx = torch.max(mean_probs, dim=0)
-                return classes[max_idx.item()], round(max_prob.item(), 3)
+                return classes[max_idx.item()], self._safe_float(round(max_prob.item(), 3))
 
     def analyze_image(self, image_bytes: bytes, pet_type: str) -> dict:
         if not self.is_loaded:
             return {"status": "error", "message": "Behavior models are not loaded yet."}
 
-        is_dog = (pet_type.lower() == "dog")
+        # Ensure pet_type is normalized
+        raw_pet_type = str(pet_type).lower().strip()
+        is_dog = any(keyword in raw_pet_type for keyword in ["dog", "doggy", "puppy", "강아지", "개", "견"])
+        is_cat = any(keyword in raw_pet_type for keyword in ["cat", "kitty", "고양이", "묘"])
         
+        if not (is_dog or is_cat):
+            print(f"[AI ENGINE] Warning: Unknown pet_type '{pet_type}', defaulting to first available.")
+            # Default fallback if unknown, or return error if you prefer strictness
+            is_dog = True # Defaulting to dog for now
+            
+        pt_label = "dog" if is_dog else "cat"
+        print(f"[AI ENGINE] Analyzing image for pet_type: {pet_type} (Mapped to: {pt_label})")
+
         try:
             img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
             tensor = TRANSFORM_TEST(img).unsqueeze(0).to(self.device)
 
             if is_dog:
+                if not hasattr(self, 'dog_behavior_model'):
+                    return {"status": "error", "message": "Dog models are not initialized."}
                 beh, b_conf = self._infer_image_model(self.dog_behavior_model, tensor, self.dog_behavior_classes)
                 emo, e_conf = self._infer_image_model(self.dog_emotion_model, tensor, self.dog_emotion_classes)
                 snd, s_conf = "Unknown", 0.0 # No audio in image
                 pat, p_conf = self._infer_patella_model(self.dog_patella_model, tensor, self.dog_patella_classes)
                 
-                return {
+                res_dict = {
                     "status": "success",
                     "pet_type_analyzed": "dog",
                     "behavior_analysis": {"detected_behavior": beh, "confidence": b_conf, "emotion": emo, "emotion_confidence": e_conf},
                     "audio_analysis": {"detected_sound": snd, "confidence": s_conf},
                     "patella_analysis": {"status": pat, "confidence": p_conf},
-                    "summary": f"{beh} (Image Analysis)"
+                    "summary": f"[DOG] {beh} (Image Analysis)"
                 }
             else:
+                if not hasattr(self, 'cat_behavior_model'):
+                    return {"status": "error", "message": "Cat models are not initialized."}
                 beh, b_conf = self._infer_image_model(self.cat_behavior_model, tensor, self.cat_behavior_classes)
                 emo, e_conf = self._infer_image_model(self.cat_emotion_model, tensor, self.cat_emotion_classes)
                 snd, s_conf = "Unknown", 0.0
                 
-                return {
+                res_dict = {
                     "status": "success",
                     "pet_type_analyzed": "cat",
                     "behavior_analysis": {"detected_behavior": beh, "confidence": b_conf, "emotion": emo, "emotion_confidence": e_conf},
                     "audio_analysis": {"detected_sound": snd, "confidence": s_conf},
-                    "summary": f"{beh} (Image Analysis)"
+                    "summary": f"[CAT] {beh} (Image Analysis)"
                 }
+            
+            return sanitize_data(res_dict)
 
         except Exception as e:
+            print(f"[AI ENGINE] Error in analyze_image: {e}")
             return {"status": "error", "message": f"Image behavior inference failed: {str(e)}"}
 
     def analyze_clip(self, video_bytes: bytes, pet_type: str) -> dict:
         if not self.is_loaded:
             return {"status": "error", "message": "Behavior models are not loaded yet."}
 
-        is_dog = (pet_type.lower() == "dog")
+        raw_pet_type = str(pet_type).lower().strip()
+        is_dog = any(keyword in raw_pet_type for keyword in ["dog", "doggy", "puppy", "강아지", "개", "견"])
+        is_cat = any(keyword in raw_pet_type for keyword in ["cat", "kitty", "고양이", "묘"])
+
+        if not (is_dog or is_cat):
+            is_dog = True # Default fallback
+
+        pt_label = "dog" if is_dog else "cat"
+        print(f"[AI ENGINE] Analyzing clip for pet_type: {pet_type} (Mapped to: {pt_label})")
         
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_file:
@@ -297,33 +352,40 @@ class DailyBehaviorEngine:
             os.remove(temp_video_path)
 
             if is_dog:
+                if not hasattr(self, 'dog_behavior_model'):
+                    return {"status": "error", "message": "Dog models are not initialized."}
                 beh, b_conf = self._infer_image_model(self.dog_behavior_model, frames_tensor, self.dog_behavior_classes)
                 emo, e_conf = self._infer_image_model(self.dog_emotion_model, frames_tensor, self.dog_emotion_classes)
                 snd, s_conf = self._infer_audio_model(self.dog_audio_model, audio_tensor, self.dog_sound_classes)
                 pat, p_conf = self._infer_patella_model(self.dog_patella_model, frames_tensor, self.dog_patella_classes)
                 
-                return {
+                res_dict = {
                     "status": "success",
                     "pet_type_analyzed": "dog",
                     "behavior_analysis": {"detected_behavior": beh, "confidence": b_conf, "emotion": emo, "emotion_confidence": e_conf},
                     "audio_analysis": {"detected_sound": snd, "confidence": s_conf},
                     "patella_analysis": {"status": pat, "confidence": p_conf},
-                    "summary": f"{beh} with {snd}"
+                    "summary": f"[DOG] {beh} with {snd}"
                 }
             else:
+                if not hasattr(self, 'cat_behavior_model'):
+                    return {"status": "error", "message": "Cat models are not initialized."}
                 beh, b_conf = self._infer_image_model(self.cat_behavior_model, frames_tensor, self.cat_behavior_classes)
                 emo, e_conf = self._infer_image_model(self.cat_emotion_model, frames_tensor, self.cat_emotion_classes)
                 snd, s_conf = self._infer_audio_model(self.cat_audio_model, audio_tensor, self.cat_sound_classes)
                 
-                return {
+                res_dict = {
                     "status": "success",
                     "pet_type_analyzed": "cat",
                     "behavior_analysis": {"detected_behavior": beh, "confidence": b_conf, "emotion": emo, "emotion_confidence": e_conf},
                     "audio_analysis": {"detected_sound": snd, "confidence": s_conf},
-                    "summary": f"{beh} with {snd}"
+                    "summary": f"[CAT] {beh} with {snd}"
                 }
+            
+            return sanitize_data(res_dict)
 
         except Exception as e:
+            print(f"[AI ENGINE] Error in analyze_clip: {e}")
             import traceback
             traceback.print_exc()
             return {"status": "error", "message": f"Behavior inference failed: {str(e)}"}

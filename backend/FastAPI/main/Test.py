@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import io
 import datetime
 import uuid
+import tempfile
 
 # AI Inference module import
 from FastAPI.main.model_inference import ai_engine
@@ -297,17 +298,15 @@ async def simulate_full_day(
     pet_type: str = Form(...)
 ):
     """
-    SIMULATION ONLY: Extracts 24 frames from sample1.mp4, analyzes them,
+    SIMULATION ONLY: Extracts 24 clips (4s each) from sample1.mp4, analyzes them,
     saves to DB, and returns a generated LLM diary.
     """
     import os
-    import cv2
     import uuid
-    import tempfile
     import datetime
     import io
+    from moviepy import VideoFileClip
     
-    # Use a unique local name to avoid shadowing global VIDEO_PATH
     SIM_SAMPLE_FILE = "sample1.mp4" 
     sim_possible_paths = [
         SIM_SAMPLE_FILE,
@@ -323,74 +322,122 @@ async def simulate_full_day(
             break
             
     if not sim_found_path:
-        return {"status": "error", "message": f"Sample video not found. Tried: {sim_possible_paths}"}
+         # Local check as fallback
+        if os.path.exists("backend/sample1.mp4"): sim_found_path = "backend/sample1.mp4"
+        else: return {"status": "error", "message": f"Sample video not found. Tried: {sim_possible_paths}"}
     
     target_video = sim_found_path
+    normalized_pt = pet_type.lower().strip()
 
     try:
-        print(f"Starting simulation for user {user_id} using {target_video}")
-        sim_cap = cv2.VideoCapture(target_video)
-        if not sim_cap.isOpened():
-            print(f"Error: Could not open {target_video}")
-            return {"status": "error", "message": "Could not open sample video"}
-
-        sim_total_frames = int(sim_cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        print(f"Total frames in video: {sim_total_frames}")
+        print(f"Starting simulation for user {user_id} using {target_video} (PT={normalized_pt})")
+        full_clip = VideoFileClip(target_video)
+        duration = full_clip.duration
+        
         NUM_SIM_CHUNKS = 24
-        sim_stride = max(1, sim_total_frames // NUM_SIM_CHUNKS)
+        sim_stride = max(1, duration // NUM_SIM_CHUNKS)
         
         sim_today = datetime.datetime.now().strftime("%Y-%m-%d")
         minio_client = get_minio_client()
 
         for i in range(NUM_SIM_CHUNKS):
-            f_idx = i * sim_stride
-            sim_cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
-            success, sim_frame = sim_cap.read()
-            if not success: 
-                print(f"Warning: Could not read frame at index {f_idx}")
-                continue
+            center_t = i * sim_stride
+            start_t = max(0, center_t - 2)
+            end_t = min(duration, center_t + 2)
             
-            # Encode frame
-            _, sim_buffer = cv2.imencode('.jpg', sim_frame)
-            sim_image_bytes = sim_buffer.tobytes()
+            print(f"[{i+1}/24] Extracting clip {start_t:.1f}s - {end_t:.1f}s...")
             
-            # 1. AI Analysis
-            print(f"Analyzing frame {i+1}/24 (pet_type={pet_type})...")
-            sim_ai_result = daily_behavior_engine.analyze_image(sim_image_bytes, pet_type)
+            # Temporary file for the 4s clip
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_clip_file:
+                tmp_clip_path = tmp_clip_file.name
             
-            # 2. MinIO Upload
+            sub_clip = full_clip.subclipped(start_t, end_t)
+            sub_clip.write_videofile(tmp_clip_path, codec="libx264", audio_codec="aac", logger=None)
+            
+            with open(tmp_clip_path, "rb") as f:
+                clip_bytes = f.read()
+            
+            # 1. AI Analysis (Clip Analysis)
+            print(f"Analyzing clip {i+1}/24 (pet_type={normalized_pt})...")
+            sim_ai_result = daily_behavior_engine.analyze_clip(clip_bytes, normalized_pt)
+            
+            # 2. Extract ONE frame for thumbnail
+            import cv2
+            cap = cv2.VideoCapture(tmp_clip_path)
+            ret, frame = cap.read()
+            cap.release()
+            
+            if ret:
+                _, buffer = cv2.imencode('.jpg', frame)
+                thumb_image_bytes = buffer.tobytes()
+            else:
+                thumb_image_bytes = b""
+
+            # 3. MinIO Upload (Thumbnail image)
             object_name = f"{user_id}/sim_{uuid.uuid4()}.jpg"
             minio_client.put_object(
                 DAILY_BEHAVIOR_BUCKET,
                 object_name,
-                io.BytesIO(sim_image_bytes),
-                length=len(sim_image_bytes),
+                io.BytesIO(thumb_image_bytes),
+                length=len(thumb_image_bytes),
                 content_type="image/jpeg"
             )
             image_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
             
-            # 3. Firebase Save
+            # 3-1. Extract Audio to MP3
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio_file:
+                tmp_audio_path = tmp_audio_file.name
+            
+            try:
+                if sub_clip.audio is not None:
+                    sub_clip.audio.write_audiofile(tmp_audio_path, logger=None)
+                    with open(tmp_audio_path, "rb") as f:
+                        audio_bytes = f.read()
+                    
+                    # 3-2. Upload MP3 to MinIO
+                    audio_object_name = f"{user_id}/sim_{uuid.uuid4()}.mp3"
+                    minio_client.put_object(
+                        DAILY_BEHAVIOR_BUCKET,
+                        audio_object_name,
+                        io.BytesIO(audio_bytes),
+                        length=len(audio_bytes),
+                        content_type="audio/mpeg"
+                    )
+                    audio_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{audio_object_name}"
+                else:
+                    audio_url = ""
+            except Exception as ae:
+                print(f"Audio extraction/upload error: {ae}")
+                audio_url = ""
+            finally:
+                if os.path.exists(tmp_audio_path):
+                    os.remove(tmp_audio_path)
+
+            # 4. Firebase Save
             chunk_time = datetime.datetime.now().replace(hour=i % 24, minute=0, second=0, microsecond=0)
             time_str = chunk_time.strftime("%H:%M:%S")
             full_timestamp = chunk_time.isoformat()
             
             ref = firebase_db.reference(f'users/{user_id}/day/{sim_today}/{time_str}')
             ref.set({
-                "video_url": image_url, # Gallery currently looks for video_url
-                "image_url": image_url,
+                "video_url": audio_url, # Now pointing to MP3 for verification
+                "image_url": image_url, # Still pointing to thumbnail
                 "timestamp": full_timestamp,
                 "analysis_result": sim_ai_result
             })
             
-        sim_cap.release()
+            # Cleanup temp clip
+            os.remove(tmp_clip_path)
+            
+        full_clip.close()
         print(f"Simulation loop successfully finished for {user_id}")
         
-        # 4. Generate Diary
+        # 5. Generate Diary
         diary_content = generate_daily_diary(user_id, sim_today)
         
         return {
             "status": "success",
-            "message": "Full day simulation completed and diary generated",
+            "message": "Full day simulation (with Audio) completed and diary generated",
             "diary": diary_content
         }
         

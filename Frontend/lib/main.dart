@@ -167,7 +167,12 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
           Row(
             children: [
               _buildActionButton(Icons.book, '일상 일기', '기분 & 활동량', Colors.blue,
-                      () => Navigator.push(context, MaterialPageRoute(builder: (context) => daily_pet(petData: petData, userId: widget.userId)))),
+                      () async {
+                        final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => daily_pet(petData: petData, userId: widget.userId)));
+                        if (result == true) {
+                          _fetchRecentDiaries(); // Refresh list if a diary was generated
+                        }
+                      }),
               SizedBox(width: 8),
               _buildActionButton(Icons.error_outline, '이상 행동', '건강 체크', Colors.orange,
                       () => Navigator.push(context, MaterialPageRoute(builder: (context) => PageB()))),

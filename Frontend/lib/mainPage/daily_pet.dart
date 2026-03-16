@@ -52,7 +52,7 @@ class _DailyPetState extends State<daily_pet> {
         Uri.parse('$baseUrl/api/simulate-full-day'),
         body: {
           "user_id": userId,
-          "pet_type": petType == '강아지' ? 'dog' : 'cat', // 엔진 호환을 위해 변환
+          "pet_type": petType, // 백엔드에서 정규화 처리하도록 원본값 전달
         },
       );
       
@@ -98,7 +98,10 @@ class _DailyPetState extends State<daily_pet> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () {
+              Navigator.pop(ctx); // Close Dialog
+              Navigator.pop(context, true); // Close Page and return true
+            },
             child: const Text('확인'),
           )
         ],
