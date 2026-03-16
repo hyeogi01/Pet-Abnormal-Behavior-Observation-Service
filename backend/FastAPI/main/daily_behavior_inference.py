@@ -270,7 +270,17 @@ class DailyBehaviorEngine:
                 max_prob, max_idx = torch.max(mean_probs, dim=0)
                 return classes[max_idx.item()], self._safe_float(round(max_prob.item(), 3))
 
-    def analyze_image(self, image_bytes: bytes, pet_type: str) -> dict:
+    def analyze_image(self, image_data: bytes, pet_type: str = "dog") -> dict:
+        # Ensure models are loaded before proceeding
+        import time
+        wait_start = time.time()
+        while not self.is_loaded:
+            if time.time() - wait_start > 60: # Max 60s wait
+                print("[ERROR] Timeout waiting for AI models to load.")
+                break
+            print("[WAIT] AI Models are still loading... waiting 2s.")
+            time.sleep(2)
+
         if not self.is_loaded:
             return {"status": "error", "message": "Behavior models are not loaded yet."}
 
@@ -288,7 +298,7 @@ class DailyBehaviorEngine:
         print(f"[AI ENGINE] Analyzing image for pet_type: {pet_type} (Mapped to: {pt_label})")
 
         try:
-            img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            img = Image.open(io.BytesIO(image_data)).convert("RGB")
             tensor = TRANSFORM_TEST(img).unsqueeze(0).to(self.device)
 
             if is_dog:
@@ -328,7 +338,17 @@ class DailyBehaviorEngine:
             print(f"[AI ENGINE] Error in analyze_image: {e}")
             return {"status": "error", "message": f"Image behavior inference failed: {str(e)}"}
 
-    def analyze_clip(self, video_bytes: bytes, pet_type: str) -> dict:
+    def analyze_clip(self, video_bytes: bytes, pet_type: str = "dog") -> dict:
+        # Ensure models are loaded before proceeding
+        import time
+        wait_start = time.time()
+        while not self.is_loaded:
+            if time.time() - wait_start > 60:
+                print("[ERROR] Timeout waiting for AI models to load.")
+                break
+            print("[WAIT] AI Models are still loading... waiting 2s.")
+            time.sleep(2)
+
         if not self.is_loaded:
             return {"status": "error", "message": "Behavior models are not loaded yet."}
 

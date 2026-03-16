@@ -21,18 +21,26 @@ from FastAPI.main.statistics import get_weekly_statistics
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Load AI models
-    print("Initializing AI Models...")
-    ai_engine.load_models()
+    # Startup: Load AI models in background to avoid blocking login/signup
+    import threading
     
-    # Initialize Daily Behavior Engine
-    daily_behavior_engine.load_models()
+    def load_models_concurrently():
+        print("[INIT] Startup: Loading heavy AI models in background...")
+        try:
+            ai_engine.load_models()
+            daily_behavior_engine.load_models()
+            print("[INIT] Startup: All AI models loaded successfully and ready.")
+        except Exception as e:
+            print(f"[INIT] Startup Error: Failed to load models in background: {e}")
+
+    # Start loading in a separate thread
+    load_thread = threading.Thread(target=load_models_concurrently)
+    load_thread.start()
     
-    # Initialize DB Connections
+    # Initialize DB (fast)
     get_minio_client()
     
     yield
-    # Shutdown
     print("Shutting down...")
 
 app = FastAPI(lifespan=lifespan)
@@ -51,6 +59,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/ready/")
+def check_ready():
+    # Return loading status of the daily behavior engine (it includes omni models)
+    return {
+        "status": "ready" if daily_behavior_engine.is_loaded else "loading",
+        "detail": "AI models are still initializing in the background." if not daily_behavior_engine.is_loaded else "All systems ready."
+    }
 
 # 사용자 로그인
 class User(BaseModel):
