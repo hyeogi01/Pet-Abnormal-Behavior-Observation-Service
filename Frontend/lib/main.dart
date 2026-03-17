@@ -11,6 +11,7 @@ import 'package:pet_diary/mainPage/photo_gallery.dart'; // Phase 4 Photo Gallery
 import 'package:pet_diary/mainPage/diary_detail.dart'; // Phase 4.1 Detail View
 
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:pet_diary/theme.dart';
 
 void main() async {
   await ScreenUtil.ensureScreenSize();
@@ -20,9 +21,10 @@ void main() async {
       minTextAdapt: true,
       splitScreenMode: true,
       builder: (context, child) {
-        return const MaterialApp(
-          home: OnboardingPage(),
+        return MaterialApp(
+          home: const OnboardingPage(),
           debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
         );
       },
     ),
@@ -125,14 +127,11 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
         leading: const Icon(Icons.menu, color: Colors.black),
         title: Text(
             _selectedIndex == 1 ? 'AI 검진' : _selectedIndex == 2 ? 'Daily Behavior Diary' : (_selectedIndex == 4 ? '마이페이지' : '준비 중'),
             style: const TextStyle(color: Colors.black, fontSize: 14, fontWeight: FontWeight.bold)
         ),
-        centerTitle: true,
         actions: [IconButton(icon: const Icon(Icons.share, color: Colors.blue), onPressed: () {})],
       ),
 
@@ -150,13 +149,8 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
       // 하단 내비게이션 바
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white,
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
-        selectedItemColor: Colors.green[700], // 현재 페이지 노란색(강조)
-        unselectedItemColor: Colors.grey[400],
-        selectedFontSize: 11,
-        unselectedFontSize: 11,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.stars), label: '모니터링'),
           BottomNavigationBarItem(icon: Icon(Icons.health_and_safety), label: '검진'),
@@ -181,7 +175,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
           SizedBox(height: 12),
           Row(
             children: [
-              _buildActionButton(Icons.book, '일상 일기', '기분 & 활동량', Colors.blue,
+              _buildActionButton(Icons.book, '일상 일기', '기분 & 활동량', Color(0xFF4EA46C),
                       () async {
                         final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => daily_pet(petData: petData, userId: widget.userId)));
                         if (result == true) {
@@ -189,7 +183,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
                         }
                       }),
               SizedBox(width: 8),
-              _buildActionButton(Icons.error_outline, '이상 행동', '건강 체크', Colors.orange,
+              _buildActionButton(Icons.error_outline, '이상 행동', '건강 체크', Color(0xFF00BBC9),
                       () => Navigator.push(context, MaterialPageRoute(builder: (context) => PageB()))),
             ],
           ),
@@ -281,7 +275,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
       padding: EdgeInsets.all(14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16.r),
-        gradient: const LinearGradient(colors: [Colors.purple, Colors.orangeAccent]),
+        gradient: LinearGradient(colors: [Theme.of(context).primaryColor, Color(0xFF00BBC9)]),
       ),
       child: Column(
         children: [
@@ -357,7 +351,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
       child: Row(
         children: [
 
-          Container(width: 50, height: 50, decoration: BoxDecoration(color: Colors.purple[100], borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.menu_book, color: Colors.purple)),
+          Container(width: 50, height: 50, decoration: BoxDecoration(color: Color(0xFF4EA46C), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.menu_book, color: Colors.white)),
           const SizedBox(width: 12),
  
           Expanded(
@@ -413,8 +407,8 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
           ),
           SizedBox(height: 10),
           _buildTrendRow('평균 활동량', 0.82, Colors.green, '82%'),
-          _buildTrendRow('체중 관리', 0.95, Colors.blue, '95%'),
-          _buildTrendRow('스트레스 관리', 0.88, Colors.purple, '88%'),
+          _buildTrendRow('체중 관리', 0.95, Color(0xff28B09A), '95%'),
+          _buildTrendRow('스트레스 관리', 0.88, Color(0xff00BBC9), '88%'),
           SizedBox(height: 10),
           Container(
             width: double.infinity,

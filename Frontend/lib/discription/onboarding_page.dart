@@ -7,12 +7,7 @@ class OnboardingPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 오렌지 포인트 컬러 설정
-    const Color pointColor = Color(0xFFFF7A00);
-    const Color backgroundColor = Color(0xFFF5F5F5);
-
     return Scaffold(
-      backgroundColor: Colors.white,
       body: SafeArea(
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: 24),
@@ -24,7 +19,7 @@ class OnboardingPage extends StatelessWidget {
                 width: double.infinity,
                 height: MediaQuery.of(context).size.height * 0.45,
                 decoration: BoxDecoration(
-                  color: backgroundColor,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(30.r),
                 ),
                 child: Center(
@@ -32,7 +27,7 @@ class OnboardingPage extends StatelessWidget {
                   child: Icon(
                       Icons.pets_rounded,
                       size: 100,
-                      color: pointColor.withOpacity(0.5)
+                      color: Theme.of(context).primaryColor.withOpacity(0.5)
                   ),
                 ),
               ),
@@ -46,7 +41,7 @@ class OnboardingPage extends StatelessWidget {
                   width: index == 0 ? 40 : 30, // 1번째 바를 길게 표시
                   height: 6,
                   decoration: BoxDecoration(
-                    color: index == 0 ? pointColor : Colors.grey.shade300,
+                    color: index == 0 ? Theme.of(context).primaryColor : Colors.grey.shade300,
                     borderRadius: BorderRadius.circular(3.r),
                   ),
                 )),
@@ -91,7 +86,6 @@ class OnboardingPage extends StatelessWidget {
                     );
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: pointColor,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12.r),
                     ),

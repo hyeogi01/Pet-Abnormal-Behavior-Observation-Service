@@ -84,8 +84,6 @@ class _PetRegistrationPageState extends State<PetRegistrationPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.black, size: 20),
           onPressed: () {
@@ -94,13 +92,12 @@ class _PetRegistrationPageState extends State<PetRegistrationPage> {
         ),
         title: const Text('반려동물 등록',
             style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
-        centerTitle: true,
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(4.0),
           child: LinearProgressIndicator(
             value: 1.0,
             backgroundColor: Colors.grey[200],
-            valueColor: const AlwaysStoppedAnimation<Color>(Colors.orange),
+            valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
             minHeight: 2,
           ),
         ),
@@ -219,10 +216,7 @@ class _PetRegistrationPageState extends State<PetRegistrationPage> {
                     _navigateToDashboard();
                   } : null, // 비활성화 상태
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _isFormValid ? Colors.orange : Colors.grey[300],
                     disabledBackgroundColor: Colors.grey[300], // 비활성 시 색상 명시
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   child: const Text('다음으로',
                       style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
@@ -247,7 +241,7 @@ class _PetRegistrationPageState extends State<PetRegistrationPage> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(primary: Colors.orange),
+            colorScheme: ColorScheme.light(primary: Theme.of(context).primaryColor),
           ),
           child: child!,
         );
@@ -295,7 +289,7 @@ class _PetRegistrationPageState extends State<PetRegistrationPage> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.pets, color: Colors.orange, size: 20),
+          Icon(Icons.pets, color: Theme.of(context).primaryColor, size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -325,7 +319,7 @@ class _PetRegistrationPageState extends State<PetRegistrationPage> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.orange),
+        borderSide: BorderSide(color: Theme.of(context).primaryColor),
       ),
     );
   }
@@ -340,7 +334,7 @@ class _PetRegistrationPageState extends State<PetRegistrationPage> {
           children: [
             Icon(
               isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
-              color: isSelected ? Colors.orange : Colors.grey[300],
+              color: isSelected ? Theme.of(context).primaryColor : Colors.grey[300],
               size: 24,
             ),
             const SizedBox(width: 8),
@@ -365,10 +359,10 @@ class _PetRegistrationPageState extends State<PetRegistrationPage> {
               height: 20,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: isSelected ? Colors.orange : Colors.grey[300]!, width: 2),
+                border: Border.all(color: isSelected ? Theme.of(context).primaryColor : Colors.grey[300]!, width: 2),
               ),
               child: isSelected
-                  ? Center(child: Container(width: 10, height: 10, decoration: const BoxDecoration(color: Colors.orange, shape: BoxShape.circle)))
+                  ? Center(child: Container(width: 10, height: 10, decoration: BoxDecoration(color: Theme.of(context).primaryColor, shape: BoxShape.circle)))
                   : null,
             ),
             const SizedBox(width: 10),
@@ -390,15 +384,15 @@ class _PetRegistrationPageState extends State<PetRegistrationPage> {
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isSelected ? Colors.orange : Colors.grey[300]!,
+              color: isSelected ? Theme.of(context).primaryColor : Colors.grey[300]!,
               width: isSelected ? 2 : 1,
             ),
           ),
           child: Column(
             children: [
-              Icon(icon, color: isSelected ? Colors.orange : Colors.grey[400], size: 32),
+              Icon(icon, color: isSelected ? Theme.of(context).primaryColor : Colors.grey[400], size: 32),
               const SizedBox(height: 8),
-              Text(label, style: TextStyle(color: isSelected ? Colors.orange : Colors.grey[600], fontSize: 13)),
+              Text(label, style: TextStyle(color: isSelected ? Theme.of(context).primaryColor : Colors.grey[600], fontSize: 13)),
             ],
           ),
         ),
@@ -416,15 +410,15 @@ class _PetRegistrationPageState extends State<PetRegistrationPage> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isSelected ? Colors.orange : Colors.grey[300]!,
+            color: isSelected ? Theme.of(context).primaryColor : Colors.grey[300]!,
             width: isSelected ? 2 : 1,
           ),
         ),
         child: Column(
           children: [
-            Icon(icon, color: isSelected ? Colors.orange : Colors.grey[400], size: 40),
+            Icon(icon, color: isSelected ? Theme.of(context).primaryColor : Colors.grey[400], size: 40),
             const SizedBox(height: 8),
-            Text(label, style: TextStyle(color: isSelected ? Colors.orange : Colors.grey[600])),
+            Text(label, style: TextStyle(color: isSelected ? Theme.of(context).primaryColor : Colors.grey[600])),
           ],
         ),
       ),

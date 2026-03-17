@@ -60,8 +60,6 @@ class _PetNameInputPageState extends State<PetNameInputPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios, color: Colors.black, size: 20),
           onPressed: () {},
@@ -71,7 +69,7 @@ class _PetNameInputPageState extends State<PetNameInputPage> {
           child: LinearProgressIndicator(
             value: 0.5,
             backgroundColor: Colors.grey[200],
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+            valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
             minHeight: 2,
           ),
         ),
@@ -99,7 +97,7 @@ class _PetNameInputPageState extends State<PetNameInputPage> {
                   borderSide: BorderSide(color: Colors.grey[300]!),
                 ),
                 focusedBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: Colors.orange, width: 2),
+                  borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2),
                 ),
               ),
             ),
@@ -124,10 +122,7 @@ class _PetNameInputPageState extends State<PetNameInputPage> {
                 }
                     : null,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
                   disabledBackgroundColor: Colors.grey[300],
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 child: Text('다음으로', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
               ),
