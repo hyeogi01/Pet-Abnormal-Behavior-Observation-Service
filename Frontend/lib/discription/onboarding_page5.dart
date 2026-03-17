@@ -99,7 +99,7 @@ class _OnboardingPage5State extends State<OnboardingPage5> {
                 if (isDialogLoading)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 20),
-                    child: CircularProgressIndicator(color: Color(0xFFFF7A00)),
+                    child: CircularProgressIndicator(),
                   )
                 else ...[
                   TextField(controller: idController, decoration: const InputDecoration(hintText: "아이디")),
@@ -117,7 +117,7 @@ class _OnboardingPage5State extends State<OnboardingPage5> {
                       await _handleAuth(context, idController.text, pwController.text, false);
                       if (mounted) setDialogState(() => isDialogLoading = false);
                     },
-                    child: const Text("로그인", style: TextStyle(color: Colors.orange)),
+                    child: Text("로그인", style: TextStyle(color: Theme.of(context).primaryColor)),
                   ),
                   ElevatedButton(
                     onPressed: () async {
@@ -125,7 +125,7 @@ class _OnboardingPage5State extends State<OnboardingPage5> {
                       await _handleAuth(context, idController.text, pwController.text, true);
                       if (mounted) setDialogState(() => isDialogLoading = false);
                     },
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, elevation: 0),
+                    style: ElevatedButton.styleFrom(elevation: 0),
                     child: const Text("회원가입", style: TextStyle(color: Colors.white)),
                   ),
                 ],
@@ -137,11 +137,7 @@ class _OnboardingPage5State extends State<OnboardingPage5> {
 
   @override
   Widget build(BuildContext context) {
-    const Color pointColor = Color(0xFFFF7A00);
-    const Color backgroundColor = Color(0xFFF5F5F5);
-
     return Scaffold(
-      backgroundColor: Colors.white,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -152,14 +148,14 @@ class _OnboardingPage5State extends State<OnboardingPage5> {
                 width: double.infinity,
                 height: MediaQuery.of(context).size.height * 0.45,
                 decoration: BoxDecoration(
-                  color: backgroundColor,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(30.r),
                 ),
                 child: Center(
                   child: Icon(
                       Icons.pets_rounded,
                       size: 100,
-                      color: pointColor.withOpacity(0.5)
+                      color: Theme.of(context).primaryColor.withOpacity(0.5)
                   ),
                 ),
               ),
@@ -171,7 +167,7 @@ class _OnboardingPage5State extends State<OnboardingPage5> {
                   width: index == 4 ? 40 : 30,
                   height: 6,
                   decoration: BoxDecoration(
-                    color: index == 4 ? pointColor : Colors.grey.shade300,
+                    color: index == 4 ? Theme.of(context).primaryColor : Colors.grey.shade300,
                     borderRadius: BorderRadius.circular(3.r),
                   ),
                 )),
@@ -209,7 +205,6 @@ class _OnboardingPage5State extends State<OnboardingPage5> {
                     );
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: pointColor,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12.r),
                     ),
