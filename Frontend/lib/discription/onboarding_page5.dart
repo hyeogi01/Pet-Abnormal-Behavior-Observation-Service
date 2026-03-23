@@ -138,6 +138,7 @@ class _OnboardingPage5State extends State<OnboardingPage5> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),

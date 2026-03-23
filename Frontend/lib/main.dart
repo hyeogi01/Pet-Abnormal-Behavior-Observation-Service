@@ -408,7 +408,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
           SizedBox(height: 10),
           _buildTrendRow('평균 활동량', 0.82, Colors.green, '82%'),
           _buildTrendRow('체중 관리', 0.95, Color(0xff28B09A), '95%'),
-          _buildTrendRow('스트레스 관리', 0.88, Color(0xff00BBC9), '88%'),
+          _buildTrendRow('스트레스 관리', 0.88, Color(0xffF14343), '88%'),
           SizedBox(height: 10),
           Container(
             width: double.infinity,
