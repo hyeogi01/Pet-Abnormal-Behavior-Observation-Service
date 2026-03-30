@@ -238,10 +238,11 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
                           },
                           child: _buildDiaryItem(
                             diaryItem['date'] ?? '알 수 없는 날짜',
-                            '최신 일기', 
-                            90, 
-                            false, 
-                            diaryItem['content'] ?? '내용 없음',
+                            '최신 일기',
+                            90,
+                            false,
+                            diaryItem['pet_diary'] ?? '내용 없음',
+                            imageUrl: diaryItem['image_url'],
                           ),
                         );
                       }).toList(),
@@ -336,13 +337,13 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
     );
   }
 
-  Widget _buildDiaryItem(String date, String day, int activity, bool hasWarning, String contentSummary) {
+  Widget _buildDiaryItem(String date, String day, int activity, bool hasWarning, String contentSummary, {String? imageUrl}) {
     // 일기 텍스트 미리보기용 축약 (첫 30글자만)
     String preview = contentSummary.length > 30 ? '${contentSummary.substring(0, 30)}...' : contentSummary;
     
     return Container(
-      margin: EdgeInsets.only(bottom: 8),
-      padding: EdgeInsets.all(10),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12.r),
@@ -350,15 +351,22 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
       ),
       child: Row(
         children: [
-
-          Container(width: 50, height: 50, decoration: BoxDecoration(color: Color(0xFF4EA46C), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.menu_book, color: Colors.white)),
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(color: const Color(0xFF4EA46C), borderRadius: BorderRadius.circular(8)),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: imageUrl != null && imageUrl.isNotEmpty
+                  ? Image.network(imageUrl, fit: BoxFit.cover, errorBuilder: (ctx, err, st) => const Icon(Icons.menu_book, color: Colors.white))
+                  : const Icon(Icons.menu_book, color: Colors.white),
+            ),
+          ),
           const SizedBox(width: 12),
- 
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-
                 Text(date, style: const TextStyle(fontWeight: FontWeight.bold)),
                 Text(preview, style: const TextStyle(color: Colors.grey, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
                 Row(
@@ -366,11 +374,11 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
                     const Icon(Icons.pets, size: 14, color: Colors.green),
                     const Text(' AI 일기 생성됨', style: TextStyle(fontSize: 10)),
                     if (hasWarning) ...[
-                      SizedBox(width: 6),
+                      const SizedBox(width: 6),
                       Container(
-                        padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                        decoration: BoxDecoration(color: Colors.orange[100], borderRadius: BorderRadius.circular(4.r)),
-                        child: Text('주의사항', style: TextStyle(color: Colors.orange, fontSize: 10)),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        decoration: BoxDecoration(color: Colors.orange[100]!.withOpacity(0.5), borderRadius: BorderRadius.circular(4.r)),
+                        child: const Text('주의사항', style: TextStyle(color: Colors.orange, fontSize: 10)),
                       )
                     ]
                   ],
@@ -378,7 +386,6 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
               ],
             ),
           ),
-
           const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
         ],
       ),

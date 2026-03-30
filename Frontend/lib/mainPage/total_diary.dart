@@ -70,7 +70,7 @@ class _DiaryListPageState extends State<DiaryListPage> {
                     return _buildDiaryListItem(
                         context,
                         diary['date'] ?? '알 수 없는 날짜',
-                        diary['content'] ?? '내용 없음',
+                        diary['pet_diary'] ?? '내용 없음',
                         diary['hasWarning'] ?? false, // Can be expanded based on log analysis
                         diary
                     );
@@ -116,9 +116,9 @@ class _DiaryListPageState extends State<DiaryListPage> {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: fullData['video_url'] != null && fullData['video_url'] != ''
+              child: fullData['image_url'] != null && fullData['image_url'] != ''
                   ? Image.network(
-                      fullData['video_url'],
+                      fullData['image_url'],
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) =>
                           const Icon(Icons.pets, color: Colors.grey),
