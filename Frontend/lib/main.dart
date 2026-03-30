@@ -22,6 +22,7 @@ void main() async {
       splitScreenMode: true,
       builder: (context, child) {
         return MaterialApp(
+          //home: const ExaminationPage(),
           home: const OnboardingPage(),
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme,
@@ -137,7 +138,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
 
       // 선택된 탭 인덱스에 따라 홈 화면 또는 준비중 화면 표시
       body: _selectedIndex == 1
-          ? ExaminationPage(petData: petData) // 새로 만든 AI 검진 페이지 연결
+          ? ExaminationPage(petData: petData, userId: widget.userId) // 새로 만든 AI 검진 페이지 연결
           : _selectedIndex == 2
           ? _buildDashboardHome() // 홈 대시보드
           : _selectedIndex == 3
