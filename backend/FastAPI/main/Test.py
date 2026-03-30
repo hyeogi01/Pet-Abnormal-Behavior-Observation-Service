@@ -519,14 +519,14 @@ def get_daily_emotion_stats(user_id: str, date: str = None):
         emotion_counts = {}
         total_valid = 0
         
-        # 감정 영문 -> 한글 매핑
+        # 감정 영문 -> 한글 매핑 (프론트엔드와 일치)
         MOOD_MAPPING = {
             "happy": "행복",
-            "anxious": "불안",
+            "relaxed": "행복",
             "active": "활발",
+            "anxious": "불안",
             "sad": "우울",
             "angry": "화남",
-            "relaxed": "해피", # relaxed와 happy가 혼용될 수 있음
             "bored": "심심",
             "sleepy": "졸림",
             "Unknown": "기타"
@@ -534,15 +534,20 @@ def get_daily_emotion_stats(user_id: str, date: str = None):
         
         for time_key, log in logs.items():
             if not isinstance(log, dict): continue
+            
+            # analysis_result 또는 behavior_analysis 직접 참조 시도
             res = log.get("analysis_result", {})
-            if res.get("status") == "success":
-                raw_emo = res.get("behavior_analysis", {}).get("emotion", "Unknown")
-                # pet_type 접두어 제거 (dog_happy -> happy)
-                clean_emo = raw_emo.split('_')[-1] if '_' in raw_emo else raw_emo
-                
-                translated = MOOD_MAPPING.get(clean_emo, clean_emo)
-                emotion_counts[translated] = emotion_counts.get(translated, 0) + 1
-                total_valid += 1
+            behavior = res.get("behavior_analysis", {}) if isinstance(res, dict) else {}
+            
+            # 구조가 다른 경우 대비
+            raw_emo = behavior.get("emotion") or res.get("emotion") or "Unknown"
+            
+            # pet_type 접두어 제거 (dog_happy -> happy)
+            clean_emo = str(raw_emo).split('_')[-1] if '_' in str(raw_emo) else str(raw_emo)
+            
+            translated = MOOD_MAPPING.get(clean_emo.lower(), clean_emo)
+            emotion_counts[translated] = emotion_counts.get(translated, 0) + 1
+            total_valid += 1
                 
         # 비율 계산
         emotion_stats = {}
@@ -563,6 +568,7 @@ def get_daily_emotion_stats(user_id: str, date: str = None):
 def fetch_diary_list(user_id: str, limit: int = 0):
     """
     Fetches a list of generated diaries for the dashboard (limit=5) or total view (limit=0).
+    Now returns pet_diary, report, memo, and multiple image_urls.
     """
     try:
         diaries = get_diary_list(user_id, limit)
@@ -573,6 +579,23 @@ def fetch_diary_list(user_id: str, limit: int = 0):
         }
     except Exception as e:
         return {"status": "error", "message": f"Fetching diaries error: {str(e)}"}
+
+class MemoRequest(BaseModel):
+    user_id: str
+    date: str
+    memo: str
+
+@app.post("/api/save-memo")
+def save_memo(req: MemoRequest):
+    """
+    Saves or updates the protector's memo for a specific date in the Diary node.
+    """
+    try:
+        ref = firebase_db.reference(f'users/{req.user_id}/Diary/{req.date}')
+        ref.update({"memo": req.memo})
+        return {"status": "success", "message": "Memo saved successfully"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @app.get("/api/gallery/{user_id}")
 def get_video_gallery(user_id: str):

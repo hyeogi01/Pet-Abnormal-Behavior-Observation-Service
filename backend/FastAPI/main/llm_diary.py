@@ -98,84 +98,151 @@ def generate_daily_diary(user_id: str, target_date: str = None) -> str:
 
     activities_text = "\n".join(activities_summary)
     
-    prompt = f"""
-다음은 {pet_type}의 오늘 하루 동안의 AI 행동 관찰 기록입니다.
-이 기록들을 바탕으로 반려동물의 하루를 묘사하는 일기를 하나 작성해주세요.
+    # ─────────────────────────── Generate Pet Diary (1st Person) ───────────────────────────
+    pet_nickname = pet_info.get("pet_name", "나")
+    
+    pet_diary_prompt = f"""
+당신은 이제부터 반려동물 '{pet_nickname}'(종: {pet_type}) 본인입니다. 
+아래의 오늘 하루 AI 행동 기록을 바탕으로, 오늘 하루가 어땠는지 당신(반려동물)의 시점에서 일기를 작성하세요.
 
 [오늘의 기록]
 {activities_text}
 
 [작성 지침]
-1. 당신은 보호자에게 반려동물의 행동과 상태를 다정하고 전문적으로 알려주는 행동 분석 선생님입니다.
-2. 어투는 반드시 선생님 말투 (예: "~했습니다", "~로 보입니다", "~군요", "~를 권장합니다" 등)를 확고하게 사용하세요.
-3. **가장 중요한 요점 위주로 딱 3문장 이내로만** 간결하게 작성하세요. (분량이 길어지지 않게 주의)
-4. 보호자를 안심시키면서도, 주의가 필요한 부분(슬개골 등)이 있다면 짧고 강력하게 언급하세요.
-5. 너무 딱딱하지 않고 따뜻한 톤을 유지하되, 군더더기 없는 문결을 유지하세요.
+1. 반드시 반려동물의 입장에서 1인칭('나', '나의' 등)으로 작성하세요.
+2. 주인(보호자)에게 오늘 하루 느낀 감정을 다정하게 이야기하듯 쓰세요.
+3. **반드시 3문장 이내로** 매우 간결하게 작성하세요.
+4. 말투는 귀엽고 친근하게 하세요.
+    """
+
+    # ─────────────────────────── Generate AI Report (Professional 1-liner) ───────────────────────────
+    report_prompt = f"""
+당신은 전문 반려동물 행동 분석가입니다.
+아래의 오늘 하루 AI 행동 기록을 바탕으로, 보호자에게 줄 'AI 행동 분석 레포트'를 작성하세요.
+
+[오늘의 기록]
+{activities_text}
+
+[작성 지침]
+1. **반드시 딱 한 줄(한 문장)**로만 작성하세요.
+2. 어투는 매우 전문적이어야 하며, 반드시 "~필요합니다", "~보입니다" 등으로 정중하고 깔끔하게 끝내세요.
+3. 요점만 명확하게 전달하세요.
     """
 
     try:
-        response = groq_client.chat.completions.create(
+        # Step 1: Generate Pet Diary
+        diary_resp = groq_client.chat.completions.create(
             messages=[
                 {
-                    "role": "system",
-                    "content": "보호자를 안심시키면서도, 주의가 필요한 부분(슬개골 등)이 있다면 짧고 강력하게 언급하세요. 너무 딱딱하지 않고 따뜻한 톤을 유지하되, 군더더기 없는 문결을 유지하세요. 당신은 반려동물 행동 분석 선생님입니다. 답변은 반드시 한국어로, 선생님 말투(~했습니다, ~군요)를 사용하며, **가장 중요한 요점 위주로 반드시 3문장 이내로 매우 간결하게** 작성해야 합니다."
+                    "role": "system", 
+                    "content": (
+                        "당신은 반려동물입니다. 주인에게 말하듯 귀엽게 1인칭 시점('나')으로 일기를 쓰세요. "
+                        "반드시 한국어로 120~150자 이내로 작성하세요. "
+                        "만약 입력 데이터에 슬개골(무릎) 문제가 있다면, '무릎이 아프다'나 '다리가 무겁다'처럼 "
+                        "반려동물이 느낄법한 자연스러운 표현을 사용하여 반드시 언급하세요. "
+                        "단, 'AI 탐지', 'Normal', '슬개골 탈구'와 같은 전문적이거나 인공지능스러운 단어는 절대 사용하지 마세요."
+                    )
                 },
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
+                {"role": "user", "content": pet_diary_prompt}
             ],
             model="llama-3.1-8b-instant",
-            temperature=0.7, # Reduced for more focused output
-            max_tokens=150,  # Strict limit to prevent long paragraphs
+            temperature=0.8, # 창의적인 표현을 위해 약간 높게 유지
+            max_tokens=150,
         )
-        diary_content = response.choices[0].message.content
+        pet_diary_content = diary_resp.choices[0].message.content.strip()
+
+        # Step 2: Generate AI Report
+        report_resp = groq_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system", 
+                    "content": (
+                        "당신은 전문 반려동물 행동 분석가입니다. "
+                        "반드시 1~2문장 내외로 전문적인 조언을 작성하세요. "
+                        "문장은 반드시 '~필요합니다' 또는 '~보입니다'로 끝나야 합니다. "
+                        "내용에 '감정'이라는 단어와 '~필요해 보입니다'라는 문구를 반드시 포함하세요. "
+                        "만약 슬개골 질환이 의심되는 상황이라면, 반드시 '슬개골'이라는 단어를 포함하여 구체적인 조언을 작성하세요."
+                    )
+                },
+                {"role": "user", "content": report_prompt}
+            ],
+            model="llama-3.1-8b-instant",
+            temperature=0.4, # 일관된 전문가 톤을 위해 온도를 낮춤
+            max_tokens=30,
+        )
+        report_content = report_resp.choices[0].message.content.strip()
         
-        # Save ONLY the diary content string to Firebase RTDB under users/{user_id}/LLM_diary/{date}
-        diary_ref = firebase_db.reference(f'users/{user_id}/LLM_diary/{target_date}')
-        diary_ref.set(diary_content)
+        # ─────────────────────────── Save to Firebase (New Structure) ───────────────────────────
+        # Path: users/{user_id}/Diary/{date}
+        diary_ref = firebase_db.reference(f'users/{user_id}/Diary/{target_date}')
         
-        return diary_content
+        # Existing memo preservation (if any)
+        existing_data = diary_ref.get() or {}
+        memo = existing_data.get("memo", "")
+        
+        diary_ref.update({
+            "pet_diary": pet_diary_content,
+            "report": report_content,
+            "memo": memo
+        })
+        
+        return pet_diary_content  # Return the pet diary for UI display
         
     except Exception as e:
-        return f"일기 생성 중 오류가 발생했습니다: {str(e)}"
+        import traceback
+        traceback.print_exc()
+        return f"일기 및 레포트 생성 중 오류가 발생했습니다: {str(e)}"
 
 def get_diary_list(user_id: str, limit: int = 0) -> list:
     """
-    Fetches the saved diaries for a user from users/{user_id}/LLM_diary/{date}.
-    Each diary is stored as a plain string.
-    If limit > 0, returns only that many recent diaries.
+    Fetches the saved diaries for a user from users/{user_id}/Diary/{date}.
+    Each entry includes pet_diary, report, and memo.
+    And returns up to 5 random images from the same date in MinIO logs.
     """
-    llm_ref = firebase_db.reference(f'users/{user_id}/LLM_diary')
-    all_diaries = llm_ref.get() or {}
+    diary_main_ref = firebase_db.reference(f'users/{user_id}/Diary')
+    all_diary_entries = diary_main_ref.get() or {}
 
-    # Also pre-fetch day logs to find image URLs
+    # Fetch day logs to find image URLs
     day_ref = firebase_db.reference(f'users/{user_id}/day')
-    all_days = day_ref.get() or {}
+    all_days_logs = day_ref.get() or {}
 
     diaries = []
-    for date_key, diary_value in all_diaries.items():
-        # diary_value may be a plain string (new) or a dict (legacy)
-        if isinstance(diary_value, str):
-            content = diary_value
-        elif isinstance(diary_value, dict):
-            content = diary_value.get("content", "")
-        else:
-            continue
-
-        # Try to find an image_url from day logs on this date
-        image_url = ""
-        day_logs = all_days.get(date_key, {})
+    for date_key, diary_data in all_diary_entries.items():
+        # Handle new structure (dict) and old structure (string/dict) compatibility
+        pet_diary = ""
+        report = ""
+        memo = ""
+        
+        if isinstance(diary_data, dict):
+            pet_diary = diary_data.get("pet_diary") or diary_data.get("content", "")
+            report = diary_data.get("report", "")
+            memo = diary_data.get("memo", "")
+        elif isinstance(diary_data, str):
+            pet_diary = diary_data # legacy string
+        
+        # Find all available image_urls for this date
+        all_image_urls = []
+        day_logs = all_days_logs.get(date_key, {})
         if isinstance(day_logs, dict):
-            for time_key, log in day_logs.items():
+            for log in day_logs.values():
                 if isinstance(log, dict) and log.get("image_url"):
-                    image_url = log["image_url"].replace("minio:9000", "localhost:9000")
-                    break
+                    url = log["image_url"].replace("minio:9000", "localhost:9000")
+                    all_image_urls.append(url)
+
+        # Pick up to 4 random images
+        import random
+        selected_images = random.sample(all_image_urls, min(len(all_image_urls), 4)) if all_image_urls else []
+        
+        # Main thumbnail (first picked or placeholder)
+        main_image = selected_images[0] if selected_images else ""
 
         diaries.append({
             "date": date_key,
-            "content": content,
-            "image_url": image_url,
+            "pet_diary": pet_diary,
+            "report": report,
+            "memo": memo,
+            "image_url": main_image,    # primary image (for list previews)
+            "image_urls": selected_images # up to 5 random images
         })
 
     diaries.sort(key=lambda x: x.get("date", ""), reverse=True)
