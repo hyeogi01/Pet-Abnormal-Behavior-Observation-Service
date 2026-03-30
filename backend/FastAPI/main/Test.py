@@ -199,10 +199,14 @@ def save_log_direct(req: DirectLogRequest):
 # AI 질환 분석 API
 @app.post("/api/analyze-disease")
 async def analyze_disease(
+    user_id: str = Form(...),
     pet_type: str = Form(...),
     disease_type: str = Form(...),
     file: UploadFile = File(...)
 ):
+    import uuid
+    import datetime
+    import io
     try:
         contents = await file.read()
         
@@ -213,9 +217,61 @@ async def analyze_disease(
             disease_type=disease_type
         )
         
+        # Upload object to MinIO
+        minio_client = get_minio_client()
+        file_id = str(uuid.uuid4())
+        object_name = f"{user_id}/examination/{disease_type}/{file_id}.jpg"
+        
+        minio_client.put_object(
+            DAILY_BEHAVIOR_BUCKET,
+            object_name,
+            io.BytesIO(contents),
+            length=len(contents),
+            content_type="image/jpeg"
+        )
+        image_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
+        
+        if isinstance(result, dict) and result.get("status") == "success":
+            result["image_url"] = image_url
+            
+            # Save to Firebase
+            log_time = datetime.datetime.now()
+            date_str = log_time.strftime("%Y-%m-%d")
+            time_str = log_time.strftime("%H:%M:%S")
+            
+            ref = firebase_db.reference(f'users/{user_id}/Examination_Results/{file_id}')
+            ref.set({
+                "date": date_str,
+                "time": time_str,
+                "timestamp": log_time.isoformat(),
+                "category": disease_type,
+                "result": result,
+                "image_url": image_url
+            })
+            
         return result
     except Exception as e:
         return {"status": "error", "message": f"Server processing error: {str(e)}"}
+
+@app.get("/api/examination-history/{user_id}")
+async def get_examination_history(user_id: str):
+    try:
+        ref = firebase_db.reference(f'users/{user_id}/Examination_Results')
+        results = ref.get()
+        if not results:
+            return {"status": "success", "data": []}
+            
+        history = []
+        for file_id, data in results.items():
+            if isinstance(data, dict):
+                data["id"] = file_id
+                history.append(data)
+            
+        # Sort by timestamp descending
+        history.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        return {"status": "success", "data": history}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # ─────────────────────────── HYBRID NEW ───────────────────────────
 # AI 일상 행동 분석 API (Video Clip -> Frame Image Upload)
