@@ -144,7 +144,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
           : _selectedIndex == 3
           ? PhotoGalleryPage(userId: widget.userId) // 사진첩 연동 (Phase 4)
           : _selectedIndex == 4
-          ? MyPage(petData: petData)    // 마이페이지 (새로 만든 파일 연결)
+          ? MyPage(petData: petData, userId: widget.userId)    // 마이페이지 피드백
           : Center(child: Text('준비 중인 페이지입니다.', style: TextStyle(color: Colors.grey[400], fontSize: 16))),
 
       // 하단 내비게이션 바
