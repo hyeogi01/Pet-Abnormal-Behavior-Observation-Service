@@ -712,3 +712,130 @@ def get_video_gallery(user_id: str):
         }
     except Exception as e:
         return {"status": "error", "message": f"Gallery fetching error: {str(e)}"}
+
+# ─────────────────────────── MYPAGE APIs ───────────────────────────
+
+@app.post("/api/profile-image/{user_id}")
+async def upload_profile_image(user_id: str, is_cover: str = Form("false"), file: UploadFile = File(...)):
+    import uuid
+    import io
+    try:
+        ref = firebase_db.reference(f'users/{user_id}/pet_info')
+        user_pet_info = ref.get() or {}
+        minio_client = get_minio_client()
+        
+        # 1. 기존 이미지가 있다면 MinIO에서 삭제
+        old_image_url = user_pet_info.get("cover_image_url") if is_cover.lower() == 'true' else user_pet_info.get("profile_image_url")
+        if old_image_url and "user-profiles/" in old_image_url:
+            old_object_name = old_image_url.split("user-profiles/")[-1]
+            try:
+                minio_client.remove_object("user-profiles", old_object_name)
+            except Exception as e:
+                print(f"Old image deletion failed: {e}")
+
+        # 2. 새 이미지 업로드
+        contents = await file.read()
+        file_ext = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
+        object_name = f"{user_id}/{uuid.uuid4()}.{file_ext}"
+        
+        minio_client.put_object(
+            "user-profiles",
+            object_name,
+            io.BytesIO(contents),
+            length=len(contents),
+            content_type=file.content_type or "image/jpeg"
+        )
+        image_url = f"http://localhost:9000/user-profiles/{object_name}"
+        
+        ref = firebase_db.reference(f'users/{user_id}/pet_info')
+        if is_cover.lower() == 'true':
+            ref.update({"cover_image_url": image_url})
+        else:
+            ref.update({"profile_image_url": image_url})
+            
+        return {"status": "success", "image_url": image_url}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+class PetNameUpdate(BaseModel):
+    pet_name: str
+
+@app.post("/api/update-pet-info/{user_id}")
+def update_pet_info(user_id: str, data: PetNameUpdate):
+    try:
+        ref = firebase_db.reference(f'users/{user_id}/pet_info')
+        ref.update({"pet_name": data.pet_name})
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+class WeightRecord(BaseModel):
+    date: str
+    weight: float
+
+@app.post("/api/weight/{user_id}")
+def add_weight(user_id: str, data: WeightRecord):
+    try:
+        import datetime
+        timestamp_key = str(int(datetime.datetime.now().timestamp() * 1000))
+        ref = firebase_db.reference(f'users/{user_id}/weight_history/{timestamp_key}')
+        ref.set(data.model_dump())
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/weight/{user_id}")
+def get_weight(user_id: str):
+    try:
+        ref = firebase_db.reference(f'users/{user_id}/weight_history')
+        weights = ref.get() or {}
+        
+        history = []
+        for key, val in weights.items():
+            if isinstance(val, dict):
+                history.append(val)
+                
+        # Sort by date
+        history.sort(key=lambda x: x.get("date", ""), reverse=False)
+        return {"status": "success", "data": history}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+class PasswordChangeRequest(BaseModel):
+    user_id: str
+    current_password: str
+    new_password: str
+
+@app.post("/api/change-password/")
+def change_password(data: PasswordChangeRequest):
+    try:
+        ref = firebase_db.reference(f'users/{data.user_id}')
+        user_data = ref.get()
+        if not user_data:
+            return {"status": "error", "message": "유저 정보를 찾을 수 없습니다."}
+            
+        fb_pw = user_data.get('password') if isinstance(user_data, dict) else user_data
+        
+        if fb_pw != data.current_password:
+            return {"status": "error", "message": "현재 비밀번호가 일치하지 않습니다."}
+            
+        if isinstance(user_data, dict):
+            ref.update({"password": data.new_password})
+        else:
+            ref.set(data.new_password)
+            
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+class DeleteAccountRequest(BaseModel):
+    user_id: str
+
+@app.post("/api/delete-account/")
+def delete_account(data: DeleteAccountRequest):
+    try:
+        ref = firebase_db.reference(f'users/{data.user_id}')
+        ref.delete()
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
