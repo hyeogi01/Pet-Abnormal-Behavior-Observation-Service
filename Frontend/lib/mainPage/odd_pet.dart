@@ -1,10 +1,236 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:image_picker/image_picker.dart';
 
-class PageB extends StatelessWidget {
-  const PageB({super.key});
+class PageB extends StatefulWidget {
+  final String userId;
+  final Map<String, dynamic>? petData;
+  const PageB({super.key, required this.userId, this.petData});
+
+  @override
+  State<PageB> createState() => _PageBState();
+}
+
+class _PageBState extends State<PageB> {
+  bool _isAnalyzing = false;
+  String? _analysisResult;
+
+  // 실제 데이터 연동을 위한 상태 변수 (초기값 설정)
+  String? _lastDetectionTime; // 마지막 감지 시간
+  String? _detectionImageUrl; // 감지된 이미지 URL
+  double _aiConfidence = 0.0; // AI 신뢰도
+  int _patellarHealthScore = 0; // 슬개골 건강도 점수
+  int _abnormalCount = 0; // 이상 감지 건수
+  int _totalCount = 0; // 전체 분석 이미지 수
+  int _maxSeverity = 0; // 최고 위험도 등급 (1~4)
+
+  bool _isLoadingData = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    // 1. Pet Info (슬개골 건강도) 초기화 (데이터 없을 시 기본값 100)
+    _patellarHealthScore = 100;
+
+    // 2. Day Data (오늘 이상 행동 및 슬개골 판별) - 백엔드 API 호출
+    await _fetchDayLogs();
+
+    setState(() {
+      _isLoadingData = false;
+    });
+  }
+
+  Future<void> _fetchDayLogs() async {
+    final now = DateTime.now();
+    final todayStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final url = Uri.parse('http://localhost:8080/api/day-logs/${widget.userId}?date=$todayStr');
+    print('[DEBUG] Fetching day logs: userId=${widget.userId}, date=$todayStr');
+
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded['status'] == 'success' && decoded['data'] != null) {
+          final data = Map<String, dynamic>.from(decoded['data']);
+          if (data.isNotEmpty) {
+            final sortedKeys = data.keys.toList()..sort();
+            
+            int abnormalCount = 0;
+            int totalCount = 0;
+            int maxSeverity = 0;
+            
+            String? latestAbnormalTimeKey;
+            Map<String, dynamic>? latestAbnormalData;
+            double? latestAbnormalConfidence;
+            
+            // 1. 모든 로그를 순회하며 이상 행동 횟수, 최고 위험도(낮은 점수), 가장 최근 이상 기록을 찾습니다.
+            for (var key in sortedKeys) {
+              final logData = Map<String, dynamic>.from(data[key] as Map);
+              if (logData['analysis_result'] != null) {
+                final analysisResult = Map<String, dynamic>.from(logData['analysis_result'] as Map);
+                if (analysisResult['patella_analysis'] != null) {
+                  final patella = Map<String, dynamic>.from(analysisResult['patella_analysis'] as Map);
+                  final gradeStr = patella['status']?.toString();
+                  totalCount++; // patella_analysis가 있는 모든 이미지 카운트
+                  
+                  if (gradeStr != null && gradeStr != 'normal') {
+                    abnormalCount++; // 이상 건수 증가
+                    
+                    int grade = int.tryParse(gradeStr) ?? 0;
+                    if (grade > maxSeverity) {
+                      maxSeverity = grade; // 가장 심각한 단계(1~4) 갱신
+                    }
+                    
+                    // sortedKeys가 시간순이므로 마지막으로 발견된 것이 '가장 최신'입니다.
+                    latestAbnormalTimeKey = key;
+                    latestAbnormalData = logData;
+                    latestAbnormalConfidence = (patella['confidence'] as num?)?.toDouble() ?? 0.85;
+                  }
+                }
+              }
+            }
+            
+            // 2. 이상 로그가 없다면 그냥 가장 마지막 일반 로그를 사용합니다.
+            if (latestAbnormalData == null) {
+              final lastKey = sortedKeys.last;
+              final lastData = Map<String, dynamic>.from(data[lastKey] as Map);
+              
+              setState(() {
+                _lastDetectionTime = lastKey.toString().length >= 5 ? lastKey.toString().substring(0, 5) : lastKey.toString();
+                _detectionImageUrl = lastData['image_url'];
+                _aiConfidence = 0.0;
+                _patellarHealthScore = 100;
+                _abnormalCount = 0;
+                _totalCount = totalCount;
+                _maxSeverity = 0;
+              });
+            } else {
+              setState(() {
+                _lastDetectionTime = latestAbnormalTimeKey.toString().length >= 5 ? latestAbnormalTimeKey.toString().substring(0, 5) : latestAbnormalTimeKey.toString();
+                _detectionImageUrl = latestAbnormalData!['image_url'];
+                _aiConfidence = latestAbnormalConfidence ?? 0.85;
+                _patellarHealthScore = 100 - (maxSeverity * 20); // 가장 심각한 등급으로 점수 산정
+                _abnormalCount = abnormalCount;
+                _totalCount = totalCount;
+                _maxSeverity = maxSeverity;
+              });
+            }
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      print('Failed to fetch day logs: $e');
+      setState(() {
+        _lastDetectionTime = null;
+        _detectionImageUrl = null;
+        _aiConfidence = 0.0;
+        _patellarHealthScore = 100;
+        _abnormalCount = 0;
+        _analysisResult = 'Error: $e'; // 에러를 UI에 띄워줍니다
+      });
+      return;
+    }
+    
+    // 실패했거나 데이터가 없는 경우
+    setState(() {
+      _lastDetectionTime = null;
+      _detectionImageUrl = null;
+      _aiConfidence = 0.0;       // 기본값
+      _patellarHealthScore = 100; // 기본값
+      _abnormalCount = 0;
+      if (_analysisResult == null) {
+        _analysisResult = '데이터가 없습니다. (요청일: $todayStr)';
+      }
+    });
+  }
+
+  // 실제 파일 업로드 및 AI 분석 함수
+  Future<void> _uploadAndAnalyze({required bool isVideo}) async {
+    final picker = ImagePicker();
+    XFile? pickedFile;
+
+    try {
+      if (isVideo) {
+        pickedFile = await picker.pickVideo(source: ImageSource.gallery);
+      } else {
+        pickedFile = await picker.pickImage(source: ImageSource.gallery);
+      }
+    } catch (e) {
+      setState(() {
+        _analysisResult = '파일 선택 오류: $e';
+      });
+      return;
+    }
+
+    if (pickedFile == null) return; // 사용자가 취소한 경우
+
+    setState(() {
+      _isAnalyzing = true;
+      _analysisResult = null;
+    });
+
+    try {
+      final bytes = await pickedFile.readAsBytes();
+      final petType = widget.petData?['pet_type'] ?? 'dog';
+
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('http://localhost:8080/api/analyze-patella/${widget.userId}'),
+      );
+      request.fields['pet_type'] = petType.toString().toLowerCase();
+      request.files.add(http.MultipartFile.fromBytes(
+        'file',
+        bytes,
+        filename: pickedFile.name,
+      ));
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded['status'] == 'success') {
+          final gradeText = decoded['grade_text'] ?? '결과 없음';
+          final confidence = ((decoded['patella_confidence'] as num?) ?? 0.0) * 100;
+          final fileType = decoded['file_type'] == 'video' ? '동영상' : '사진';
+          setState(() {
+            _isAnalyzing = false;
+            _analysisResult = '[$fileType 분석 완료] $gradeText\nAI 신뢰도: ${confidence.toStringAsFixed(1)}%';
+          });
+        } else {
+          setState(() {
+            _isAnalyzing = false;
+            _analysisResult = '분석 실패: ${decoded['message'] ?? '알 수 없는 오류'}';
+          });
+        }
+      } else {
+        setState(() {
+          _isAnalyzing = false;
+          _analysisResult = '서버 오류 (HTTP ${response.statusCode})';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isAnalyzing = false;
+        _analysisResult = '업로드 오류: $e';
+      });
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoadingData) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: Colors.orange)),
+      );
+    }
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
       body: Column(
@@ -19,24 +245,27 @@ class PageB extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // 2. 오늘 감지된 이상 행동 섹션
-                  _buildSectionTitle(Icons.warning_amber_rounded, '오늘 감지된 이상 행동', badgeCount: '2건'),
+                  _buildSectionTitle(Icons.warning_amber_rounded, '오늘 감지된 이상 행동', badgeCount: '${_abnormalCount}건'),
                   const SizedBox(height: 12),
                   _buildBehaviorCard(
-                    time: '14:30',
+                    time: _lastDetectionTime,
                     title: '슬개골 관련',
                     description: '걷는 중 약간의 절뚝거림 감지',
-                    confidence: 0.78,
+                    confidence: _aiConfidence,
                     color: Colors.orange,
-                    showImage: true,
+                    imageUrl: _detectionImageUrl,
                   ),
                   const SizedBox(height: 12),
                   _buildBehaviorCard(
-                    time: '10:45',
-                    title: '행동 이상',
-                    description: '평소보다 활동량 15% 감소',
-                    confidence: 0.65,
+                    time: _lastDetectionTime,
+                    title: '슬개골 이상',
+                    description: _maxSeverity > 0
+                        ? '슬개골 질환 ${_maxSeverity}기가 의심됩니다'
+                        : '슬개골 이상 없음',
+                    confidenceLabel: '슬개골 확인 빈도',
+                    confidence: _totalCount > 0 ? _abnormalCount / _totalCount : 0.0,
                     color: Colors.purple,
-                    showImage: false,
+                    imageUrl: null,
                   ),
 
                   const SizedBox(height: 24),
@@ -48,7 +277,7 @@ class PageB extends StatelessWidget {
 
                   const SizedBox(height: 24),
 
-                  // 4. 슬개골 건강 분석 섹션
+                  // 4. 슬개골 건강 분석 섹션 (업로드 및 AI 판별 기능 포함)
                   _buildSectionTitle(Icons.analytics_outlined, '슬개골 건강 분석'),
                   const SizedBox(height: 12),
                   _buildAnalysisCard(),
@@ -75,29 +304,33 @@ class PageB extends StatelessWidget {
   // --- 위젯 빌더 함수들 ---
 
   Widget _buildHeader(BuildContext context) {
-  return AppBar(
-    backgroundColor: Colors.orange,
-    elevation: 0,
-    leading: IconButton(
-      icon: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
-      onPressed: () => Navigator.pop(context),
-    ),
-    title: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Text(
-          '이상 행동 일기',
-          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-        const Text(
-          '2026년 2월 6일 목요일',
-          style: TextStyle(color: Colors.white70, fontSize: 10),
-        ),
-      ],
-    ),
-    centerTitle: true,
-  );
-}
+    final now = DateTime.now();
+    final weekdays = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일'];
+    final dateStr = '${now.year}년 ${now.month}월 ${now.day}일 ${weekdays[now.weekday - 1]}';
+
+    return AppBar(
+      backgroundColor: Colors.orange,
+      elevation: 0,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
+        onPressed: () => Navigator.pop(context),
+      ),
+      title: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            '이상 행동 일기',
+            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          Text(
+            dateStr,
+            style: const TextStyle(color: Colors.white70, fontSize: 10),
+          ),
+        ],
+      ),
+      centerTitle: true,
+    );
+  }
 
   Widget _buildSectionTitle(IconData icon, String title, {String? badgeCount}) {
     return Row(
@@ -118,12 +351,13 @@ class PageB extends StatelessWidget {
   }
 
   Widget _buildBehaviorCard({
-    required String time,
+    String? time,
     required String title,
     required String description,
     required double confidence,
     required Color color,
-    required bool showImage,
+    String? imageUrl,
+    String confidenceLabel = 'AI 신뢰도',
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -138,33 +372,41 @@ class PageB extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)),
-                child: Text(time, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-              ),
-              const SizedBox(width: 8),
+              if (time != null && time.isNotEmpty) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)),
+                  child: Text(time, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(width: 8),
+              ],
               Text(title, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 16)),
             ],
           ),
           const SizedBox(height: 8),
           Text(description, style: const TextStyle(fontSize: 13, color: Colors.black87)),
-          if (showImage) ...[
+          if (imageUrl != null && imageUrl.isNotEmpty) ...[
             const SizedBox(height: 12),
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: Image.network(
-                'data:image/jpeg;base64,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', // 샘플 이미지
-                height: 600,
+                imageUrl,
+                height: 200,
                 width: double.infinity,
                 fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  height: 200,
+                  width: double.infinity,
+                  color: Colors.grey[200],
+                  child: const Center(child: Icon(Icons.broken_image, color: Colors.grey)),
+                ),
               ),
             ),
           ],
           const SizedBox(height: 12),
           Row(
             children: [
-              const Text('AI 신뢰도', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              Text(confidenceLabel, style: const TextStyle(fontSize: 12, color: Colors.grey)),
               const SizedBox(width: 8),
               Expanded(
                 child: ClipRRect(
@@ -172,13 +414,13 @@ class PageB extends StatelessWidget {
                   child: LinearProgressIndicator(
                     value: confidence,
                     backgroundColor: Colors.grey[200],
-                    valueColor: AlwaysStoppedAnimation<Color>(color),
+                    valueColor: AlwaysStoppedAnimation<Color>(confidence > 0 ? color : Colors.grey),
                     minHeight: 8,
                   ),
                 ),
               ),
               const SizedBox(width: 10),
-              Text('${(confidence * 100).toInt()}%', style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.bold)),
+              Text('${(confidence * 100).toInt()}%', style: TextStyle(fontSize: 12, color: confidence > 0 ? color : Colors.grey, fontWeight: FontWeight.bold)),
             ],
           ),
         ],
@@ -196,13 +438,12 @@ class PageB extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _buildIndicatorRow('슬개골 건강도', 75, Colors.orange, '보통의 주의가 필요합니다'),
-          const Divider(height: 24),
-          _buildIndicatorRow('스트레스 지수', 35, Colors.green, '매우 양호합니다'),
-          const Divider(height: 24),
-          _buildIndicatorRow('안구 건강', 92, Colors.green, '건강한 상태입니다'),
-          const Divider(height: 24),
-          _buildIndicatorRow('피부 상태', 88, Colors.green, '양호한 상태입니다'),
+          _buildIndicatorRow(
+            '슬개골 건강도', 
+            _patellarHealthScore, 
+            _patellarHealthScore > 0 ? Colors.orange : Colors.grey, 
+            _patellarHealthScore > 0 ? '보통의 주의가 필요합니다' : '데이터 수집 중입니다'
+          ),
         ],
       ),
     );
@@ -244,6 +485,7 @@ class PageB extends StatelessWidget {
         boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
             padding: const EdgeInsets.all(16),
@@ -256,55 +498,115 @@ class PageB extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('보행 영상 분석 결과', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      const Text('슬개골 건강 AI 분석', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                       const SizedBox(height: 4),
-                      const Text('오늘 오후 2시 30분, 콩이의 걸음걸이에서 약간의 불규칙성이 감지되었습니다.', style: TextStyle(fontSize: 12, height: 1.5)),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          _buildLegStatus('왼쪽 뒷다리', '주의', Colors.orange),
-                          const SizedBox(width: 10),
-                          _buildLegStatus('오른쪽 뒷다리', '정상', Colors.green),
-                        ],
-                      )
+                      const Text('동영상이나 사진을 업로드하여 슬개골 이상 여부를 판별해보세요.', style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black54)),
                     ],
                   ),
                 )
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.all(16),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    CircleAvatar(radius: 12, backgroundColor: Colors.blueAccent, child: Icon(Icons.person, color: Colors.white, size: 14)),
-                    SizedBox(width: 8),
-                    Text('수의사 권장사항', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                  ],
-                ),
-                SizedBox(height: 8),
-                Text('• 무리한 점프나 계단 오르내리기를 줄여주세요', style: TextStyle(fontSize: 12, height: 1.6)),
-                Text('• 체중 관리를 통해 관절 부담을 줄여주세요', style: TextStyle(fontSize: 12, height: 1.6)),
-                Text('• 증상이 지속되면 동물병원 방문을 권장합니다', style: TextStyle(fontSize: 12, height: 1.6)),
-              ],
-            ),
-          )
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLegStatus(String leg, String status, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(4), border: Border.all(color: color.withOpacity(0.5))),
-      child: Row(
-        children: [
-          Text('$leg: ', style: const TextStyle(fontSize: 11)),
-          Text(status, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.bold)),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: _isAnalyzing 
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20.0),
+                    child: Column(
+                      children: [
+                        CircularProgressIndicator(color: Colors.orange),
+                        SizedBox(height: 16),
+                        Text('AI 모델이 슬개골 상태를 분석 중입니다...', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      ],
+                    ),
+                  ),
+                )
+              : _analysisResult == null 
+                  ? Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _uploadAndAnalyze(isVideo: true),
+                            icon: const Icon(Icons.video_camera_back, size: 18),
+                            label: const Text('동영상 업로드'),
+                            style: ElevatedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              backgroundColor: Colors.orangeAccent,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _uploadAndAnalyze(isVideo: false),
+                            icon: const Icon(Icons.image, size: 18),
+                            label: const Text('사진 업로드'),
+                            style: ElevatedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              backgroundColor: Colors.blueAccent,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.orange[50],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.warning_rounded, color: Colors.orange[400], size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _analysisResult!,
+                                  style: TextStyle(fontSize: 13, color: Colors.orange[800], height: 1.5, fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Row(
+                          children: [
+                            CircleAvatar(radius: 12, backgroundColor: Colors.blueAccent, child: Icon(Icons.medical_services, color: Colors.white, size: 14)),
+                            SizedBox(width: 8),
+                            Text('수의사 권장사항', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text('• 무리한 점프나 계단 오르내리기를 줄여주세요', style: TextStyle(fontSize: 12, height: 1.6)),
+                        const Text('• 체중 관리를 통해 관절 부담을 줄여주세요', style: TextStyle(fontSize: 12, height: 1.6)),
+                        const Text('• 증상이 지속되면 동물병원 방문을 권장합니다', style: TextStyle(fontSize: 12, height: 1.6)),
+                        const SizedBox(height: 16),
+                        Center(
+                          child: TextButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _analysisResult = null;
+                              });
+                            },
+                            icon: const Icon(Icons.refresh, size: 16),
+                            label: const Text('다시 분석하기'),
+                          ),
+                        )
+                      ],
+                    ),
+          ),
         ],
       ),
     );
@@ -346,9 +648,10 @@ class PageB extends StatelessWidget {
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.orange,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 2,
         ),
         child: const Text('일기 저장하기', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
       ),
     );
   }
-}
+}

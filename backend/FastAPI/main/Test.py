@@ -620,6 +620,102 @@ def get_daily_emotion_stats(user_id: str, date: str = None):
     except Exception as e:
         return {"status": "error", "message": f"Stats error: {str(e)}"}
 
+@app.post("/api/analyze-patella/{user_id}")
+async def analyze_patella(
+    user_id: str,
+    file: UploadFile = File(...),
+    pet_type: str = Form(default="dog")
+):
+    """
+    사용자가 업로드한 이미지 또는 동영상을 받아 슬개골 AI 분석을 수행합니다.
+    - file: 이미지(.jpg, .png) 또는 동영상(.mp4, .mov) 파일
+    - pet_type: 'dog' 또는 'cat' (기본값: dog)
+    """
+    try:
+        file_bytes = await file.read()
+        filename = file.filename or ""
+        content_type = file.content_type or ""
+        
+        is_video = (
+            content_type.startswith("video/") or
+            any(filename.lower().endswith(ext) for ext in [".mp4", ".mov", ".avi", ".mkv"])
+        )
+        
+        if is_video:
+            result = daily_behavior_engine.analyze_clip(file_bytes, pet_type=pet_type)
+        else:
+            result = daily_behavior_engine.analyze_image(file_bytes, pet_type=pet_type)
+        
+        if result.get("status") == "error":
+            return {"status": "error", "message": result.get("message", "분석 실패")}
+        
+        patella = result.get("patella_analysis", {})
+        patella_status = patella.get("status", "unknown")
+        patella_confidence = patella.get("confidence", 0.0)
+        
+        # 등급 텍스트 변환
+        if patella_status == "normal":
+            grade_text = "정상"
+            severity = 0
+        else:
+            try:
+                severity = int(patella_status)
+                grade_text = f"슬개골 질환 {severity}기 의심"
+            except (ValueError, TypeError):
+                grade_text = f"이상 감지: {patella_status}"
+                severity = 1
+        
+        return {
+            "status": "success",
+            "file_type": "video" if is_video else "image",
+            "pet_type": pet_type,
+            "patella_status": patella_status,
+            "patella_confidence": patella_confidence,
+            "severity": severity,
+            "grade_text": grade_text,
+            "behavior_analysis": result.get("behavior_analysis", {}),
+        }
+        
+    except Exception as e:
+        print(f"[PATELLA API] Error: {e}")
+        return {"status": "error", "message": f"분석 중 오류 발생: {str(e)}"}
+
+@app.get("/api/day-logs/{user_id}")
+def get_day_logs(user_id: str, date: str = None):
+    """
+    Returns the raw logs (abnormal behaviors, etc) for a specific date.
+    If the requested date has no data, it falls back to the most recent date that has data.
+    """
+    requested_date = date if date else datetime.datetime.now().strftime("%Y-%m-%d")
+        
+    try:
+        day_ref = firebase_db.reference(f'users/{user_id}/day')
+        all_days = day_ref.get()
+        
+        if not all_days:
+            return {"status": "success", "date": requested_date, "data": {}}
+            
+        # 요청한 날짜에 데이터가 있는지 확인
+        if requested_date in all_days and all_days[requested_date]:
+            return {
+                "status": "success",
+                "date": requested_date,
+                "data": all_days[requested_date]
+            }
+            
+        # 요청한 날짜에 데이터가 없으면, 데이터가 있는 가장 최근 날짜를 찾음
+        sorted_dates = sorted(all_days.keys(), reverse=True)
+        latest_date = sorted_dates[0]
+        
+        print(f"[DEBUG API] /api/day-logs/ user_id: {user_id}, requested: {requested_date}, fallback to: {latest_date}", flush=True)
+        return {
+            "status": "success",
+            "date": latest_date,
+            "data": all_days[latest_date]
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Fetching day logs error: {str(e)}"}
+
 @app.get("/api/daily-diaries/{user_id}")
 def fetch_diary_list(user_id: str, limit: int = 0):
     """

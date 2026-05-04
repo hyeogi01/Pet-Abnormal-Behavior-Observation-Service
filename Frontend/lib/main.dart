@@ -185,7 +185,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
                       }),
               SizedBox(width: 8),
               _buildActionButton(Icons.error_outline, '이상 행동', '건강 체크', Color(0xFF00BBC9),
-                      () => Navigator.push(context, MaterialPageRoute(builder: (context) => PageB()))),
+                      () => Navigator.push(context, MaterialPageRoute(builder: (context) => PageB(userId: widget.userId, petData: petData)))),
             ],
           ),
           SizedBox(height: 16),
