@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:pet_diary/mainPage/total_diary.dart';
 import 'package:pet_diary/mainPage/odd_pet.dart';
 import 'package:pet_diary/mainPage/daily_pet.dart';
@@ -26,6 +27,16 @@ void main() async {
           home: const OnboardingPage(),
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme,
+          locale: const Locale('ko', 'KR'),
+          supportedLocales: const [
+            Locale('ko', 'KR'),
+            Locale('en', 'US'),
+          ],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
         );
       },
     ),

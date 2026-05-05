@@ -974,3 +974,107 @@ def get_user_settings(user_id: str):
         return {"status": "success", "settings": settings}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+# ─── 산책 로그 API ───────────────────────────────────────────────
+
+@app.post("/api/walking-logs/{user_id}")
+def save_walking_log(user_id: str, data: dict):
+    """
+    산책 기록을 Firebase에 저장합니다.
+    입력: { "date": "2026-05-05", "start_time": "09:00", "end_time": "12:00" }
+    """
+    try:
+        date = data.get("date")
+        start_time = data.get("start_time")
+        end_time = data.get("end_time")
+
+        if not date or not start_time or not end_time:
+            return {"status": "error", "message": "date, start_time, end_time은 필수 항목입니다."}
+
+        # 산책 시간(분) 자동 계산
+        from datetime import datetime as dt
+        fmt = "%H:%M"
+        t_start = dt.strptime(start_time, fmt)
+        t_end = dt.strptime(end_time, fmt)
+        duration_min = int((t_end - t_start).total_seconds() / 60)
+        if duration_min <= 0:
+            return {"status": "error", "message": "종료 시간은 시작 시간보다 이후여야 합니다."}
+
+        ref = firebase_db.reference(f'users/{user_id}/walking_logs')
+        ref.push({
+            "date": date,
+            "start_time": start_time,
+            "end_time": end_time,
+            "duration_min": duration_min
+        })
+        return {"status": "success", "message": "산책 기록이 저장되었습니다.", "duration_min": duration_min}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/walking-logs/{user_id}")
+def get_walking_logs(user_id: str):
+    """
+    사용자의 전체 산책 기록을 Firebase에서 조회합니다.
+    날짜 역순으로 정렬하여 반환합니다.
+    """
+    try:
+        ref = firebase_db.reference(f'users/{user_id}/walking_logs')
+        logs = ref.get()
+        if not logs:
+            return {"status": "success", "data": []}
+
+        result = []
+        for key, val in logs.items():
+            if isinstance(val, dict):
+                val["id"] = key
+                result.append(val)
+
+        result.sort(key=lambda x: (x.get("date", ""), x.get("start_time", "")), reverse=True)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.put("/api/walking-logs/{user_id}/{log_id}")
+def update_walking_log(user_id: str, log_id: str, data: dict):
+    """
+    특정 산책 기록을 수정합니다.
+    입력: { "date": "2026-05-05", "start_time": "09:00", "end_time": "12:00" }
+    """
+    try:
+        start_time = data.get("start_time")
+        end_time = data.get("end_time")
+        date = data.get("date")
+
+        if not date or not start_time or not end_time:
+            return {"status": "error", "message": "date, start_time, end_time은 필수 항목입니다."}
+
+        from datetime import datetime as dt
+        fmt = "%H:%M"
+        t_start = dt.strptime(start_time, fmt)
+        t_end = dt.strptime(end_time, fmt)
+        duration_min = int((t_end - t_start).total_seconds() / 60)
+        if duration_min <= 0:
+            return {"status": "error", "message": "종료 시간은 시작 시간보다 이후여야 합니다."}
+
+        ref = firebase_db.reference(f'users/{user_id}/walking_logs/{log_id}')
+        ref.update({
+            "date": date,
+            "start_time": start_time,
+            "end_time": end_time,
+            "duration_min": duration_min
+        })
+        return {"status": "success", "message": "산책 기록이 수정되었습니다.", "duration_min": duration_min}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.delete("/api/walking-logs/{user_id}/{log_id}")
+def delete_walking_log(user_id: str, log_id: str):
+    """
+    특정 산책 기록을 삭제합니다.
+    """
+    try:
+        ref = firebase_db.reference(f'users/{user_id}/walking_logs/{log_id}')
+        ref.delete()
+        return {"status": "success", "message": "산책 기록이 삭제되었습니다."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

@@ -8,6 +8,7 @@ import 'package:pet_diary/discription/onboarding_page.dart'; // import for Onboa
 import 'profile_edit_page.dart';
 import 'weight_history_page.dart';
 import 'account_settings_page.dart';
+import 'walking_log_page.dart';
 
 class MyPage extends StatefulWidget {
   final Map<String, dynamic>? petData;
@@ -183,6 +184,25 @@ class _MyPageState extends State<MyPage> {
                     style: const TextStyle(color: Colors.orange, fontSize: 13, fontWeight: FontWeight.w600),
                   ),
                   onTap: () => _showDiaryCoverTypeDialog(),
+                ),
+                const SizedBox(height: 20),
+
+                _buildSectionTitle('산책'),
+                _buildSettingsTile(
+                  Icons.timer_outlined,
+                  '시간 설정',
+                  Colors.green,
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+                  onTap: () => _showWalkingTimeSettingDialog(),
+                ),
+                _buildSettingsTile(
+                  Icons.directions_walk,
+                  '산책 로그',
+                  Colors.blue,
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+                  onTap: () {
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => WalkingLogPage(userId: widget.userId)));
+                  },
                 ),
                 const SizedBox(height: 20),
 
@@ -425,6 +445,297 @@ class _MyPageState extends State<MyPage> {
           ),
         );
       },
+    );
+  }
+
+  void _showWalkingTimeSettingDialog() {
+    DateTime selectedDate = DateTime.now();
+    TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
+    TimeOfDay endTime = const TimeOfDay(hour: 10, minute: 0);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) {
+          String formatTime(TimeOfDay t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+          String formatDate(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+          return Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFF2C2C2E),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[600],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  '산책 시간 설정',
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '날짜와 시작/종료 시간을 설정하세요',
+                  style: TextStyle(color: Colors.grey[400], fontSize: 13),
+                ),
+                const SizedBox(height: 24),
+
+                // 날짜 선택
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: GestureDetector(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDate,
+                        firstDate: DateTime(2024),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) {
+                        setModalState(() => selectedDate = picked);
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[800],
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.calendar_today, color: Colors.white, size: 20),
+                          const SizedBox(width: 12),
+                          const Text('날짜', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                          const Spacer(),
+                          Text(
+                            formatDate(selectedDate),
+                            style: const TextStyle(color: Colors.orange, fontSize: 15, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // 시간 선택 (시작 / 종료) - 스크롤 휠 방식
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
+                    children: [
+                      // 시작 시간
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            _showCupertinoTimePicker(
+                              context,
+                              initialTime: startTime,
+                              onTimeChanged: (picked) {
+                                setModalState(() => startTime = picked);
+                              },
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[800],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Column(
+                              children: [
+                                Text('시작', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+                                const SizedBox(height: 6),
+                                Text(
+                                  formatTime(startTime),
+                                  style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Icon(Icons.arrow_forward, color: Colors.grey[500]),
+                      ),
+                      // 종료 시간
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            _showCupertinoTimePicker(
+                              context,
+                              initialTime: endTime,
+                              onTimeChanged: (picked) {
+                                setModalState(() => endTime = picked);
+                              },
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[800],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Column(
+                              children: [
+                                Text('종료', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+                                const SizedBox(height: 6),
+                                Text(
+                                  formatTime(endTime),
+                                  style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // 저장 버튼
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        final dateStr = formatDate(selectedDate);
+                        final startStr = formatTime(startTime);
+                        final endStr = formatTime(endTime);
+
+                        // 종료 시간이 시작 시간보다 이후인지 간단히 체크
+                        if (endTime.hour < startTime.hour || (endTime.hour == startTime.hour && endTime.minute <= startTime.minute)) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('종료 시간은 시작 시간 이후여야 합니다.')),
+                          );
+                          return;
+                        }
+
+                        try {
+                          final url = Uri.parse('$baseUrl/api/walking-logs/${widget.userId}');
+                          final response = await http.post(
+                            url,
+                            headers: {'Content-Type': 'application/json'},
+                            body: jsonEncode({
+                              'date': dateStr,
+                              'start_time': startStr,
+                              'end_time': endStr,
+                            }),
+                          );
+                          if (response.statusCode == 200) {
+                            final decoded = jsonDecode(response.body);
+                            if (decoded['status'] == 'success') {
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('산책 기록이 저장되었습니다. (${decoded['duration_min']}분)')),
+                              );
+                              return;
+                            }
+                          }
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('저장에 실패했습니다. 다시 시도해주세요.')),
+                          );
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('서버 통신 에러: $e')),
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('산책 기록 저장', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showCupertinoTimePicker(BuildContext context, {required TimeOfDay initialTime, required Function(TimeOfDay) onTimeChanged}) {
+    DateTime tempDateTime = DateTime(2026, 1, 1, initialTime.hour, initialTime.minute);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        height: 300,
+        decoration: const BoxDecoration(
+          color: Color(0xFF2C2C2E),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[600],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Expanded(
+              child: CupertinoTheme(
+                data: const CupertinoThemeData(
+                  brightness: Brightness.dark,
+                  textTheme: CupertinoTextThemeData(
+                    dateTimePickerTextStyle: TextStyle(color: Colors.white, fontSize: 22),
+                  ),
+                ),
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.time,
+                  initialDateTime: tempDateTime,
+                  use24hFormat: false,
+                  onDateTimeChanged: (DateTime newTime) {
+                    tempDateTime = newTime;
+                  },
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    onTimeChanged(TimeOfDay(hour: tempDateTime.hour, minute: tempDateTime.minute));
+                    Navigator.pop(ctx);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('확인', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
