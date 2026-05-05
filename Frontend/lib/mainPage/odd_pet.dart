@@ -95,21 +95,8 @@ class _PageBState extends State<PageB> {
               }
             }
             
-            // 2. 이상 로그가 없다면 그냥 가장 마지막 일반 로그를 사용합니다.
-            if (latestAbnormalData == null) {
-              final lastKey = sortedKeys.last;
-              final lastData = Map<String, dynamic>.from(data[lastKey] as Map);
-              
-              setState(() {
-                _lastDetectionTime = lastKey.toString().length >= 5 ? lastKey.toString().substring(0, 5) : lastKey.toString();
-                _detectionImageUrl = lastData['image_url'];
-                _aiConfidence = 0.0;
-                _patellarHealthScore = 100;
-                _abnormalCount = 0;
-                _totalCount = totalCount;
-                _maxSeverity = 0;
-              });
-            } else {
+            // 2. 이상 로그가 있는지 확인하여 상태를 업데이트합니다.
+            if (latestAbnormalData != null) {
               setState(() {
                 _lastDetectionTime = latestAbnormalTimeKey.toString().length >= 5 ? latestAbnormalTimeKey.toString().substring(0, 5) : latestAbnormalTimeKey.toString();
                 _detectionImageUrl = latestAbnormalData!['image_url'];
@@ -118,6 +105,19 @@ class _PageBState extends State<PageB> {
                 _abnormalCount = abnormalCount;
                 _totalCount = totalCount;
                 _maxSeverity = maxSeverity;
+                _analysisResult = null; // 결과 초기화
+              });
+            } else {
+              // 이상 로그가 전혀 없는 경우: 이미지를 보여주지 않고 안내 문구 표시
+              setState(() {
+                _lastDetectionTime = null;
+                _detectionImageUrl = null;
+                _aiConfidence = 0.0;
+                _patellarHealthScore = 100;
+                _abnormalCount = 0;
+                _totalCount = totalCount;
+                _maxSeverity = 0;
+                _analysisResult = '오늘 감지된 이상 행동이 없습니다.';
               });
             }
             return;
@@ -250,7 +250,9 @@ class _PageBState extends State<PageB> {
                   _buildBehaviorCard(
                     time: _lastDetectionTime,
                     title: '슬개골 관련',
-                    description: '걷는 중 약간의 절뚝거림 감지',
+                    description: _detectionImageUrl != null 
+                        ? '슬개골 이상 및 보행 절뚝거림이 탐지되었습니다.' 
+                        : '현재 탐지된 슬개골 이상 보행이 없습니다.',
                     confidence: _aiConfidence,
                     color: Colors.orange,
                     imageUrl: _detectionImageUrl,
@@ -442,7 +444,7 @@ class _PageBState extends State<PageB> {
             '슬개골 건강도', 
             _patellarHealthScore, 
             _patellarHealthScore > 0 ? Colors.orange : Colors.grey, 
-            _patellarHealthScore > 0 ? '보통의 주의가 필요합니다' : '데이터 수집 중입니다'
+            _getPatellaStatusText()
           ),
         ],
       ),
@@ -654,4 +656,20 @@ class _PageBState extends State<PageB> {
       ),
     );
   }
-}
+
+  String _getPatellaStatusText() {
+    if (_totalCount == 0) return '데이터 수집 및 AI 분석이 진행 중입니다.';
+    switch (_maxSeverity) {
+      case 1:
+        return '가벼운 주의가 필요합니다.';
+      case 2:
+        return '세심한 관찰이 필요합니다.';
+      case 3:
+        return '전문가의 상담을 권장합니다.';
+      case 4:
+        return '즉각적인 전문 진료가 시급합니다.';
+      default:
+        return '슬개골 건강 상태가 양호하며 정상 보행을 보입니다.';
+    }
+  }
+}
