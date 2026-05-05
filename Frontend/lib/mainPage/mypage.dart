@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -24,6 +25,10 @@ class _MyPageState extends State<MyPage> {
   String? _profileImageUrl;
   String? _coverImageUrl;
 
+  // 설정 상태 변수
+  int _recordingInterval = 60; // 디폴트 60분
+  String _diaryCoverType = 'happy'; // 디폴트: 행복 우선
+
   final String baseUrl = "http://localhost:8080";
 
   @override
@@ -32,6 +37,52 @@ class _MyPageState extends State<MyPage> {
     _petName = widget.petData?['pet_name'] ?? '우리';
     _profileImageUrl = widget.petData?['profile_image_url'];
     _coverImageUrl = widget.petData?['cover_image_url'];
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    try {
+      final url = Uri.parse('$baseUrl/api/settings/${widget.userId}');
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['status'] == 'success' && data['settings'] != null) {
+          setState(() {
+            _recordingInterval = data['settings']['recording_interval'] ?? 60;
+            _diaryCoverType = data['settings']['diary_cover_type'] ?? 'happy';
+          });
+        }
+      }
+    } catch (e) {
+      // 설정 로드 실패 시 기본값 유지
+      debugPrint('설정 로드 실패: $e');
+    }
+  }
+
+  Future<void> _saveSettings() async {
+    try {
+      final url = Uri.parse('$baseUrl/api/settings/${widget.userId}');
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'recording_interval': _recordingInterval,
+          'diary_cover_type': _diaryCoverType,
+        }),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['status'] == 'success') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('설정이 저장되었습니다.')),
+          );
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('설정 저장 실패: $e')),
+      );
+    }
   }
 
   Future<void> _pickImage(bool isCover) async {
@@ -111,7 +162,30 @@ class _MyPageState extends State<MyPage> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                 ),
                 const SizedBox(height: 20),
-                
+
+                _buildSectionTitle('설정'),
+                _buildSettingsTile(
+                  Icons.videocam_outlined,
+                  '촬영 주기 설정',
+                  Colors.teal,
+                  trailing: Text(
+                    '$_recordingInterval분',
+                    style: const TextStyle(color: Colors.orange, fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  onTap: () => _showRecordingIntervalPicker(),
+                ),
+                _buildSettingsTile(
+                  Icons.photo_library_outlined,
+                  '일기 대표 사진 설정',
+                  Colors.deepPurple,
+                  trailing: Text(
+                    _diaryCoverType == 'happy' ? '행복 우선' : '감정 빈도 우선',
+                    style: const TextStyle(color: Colors.orange, fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  onTap: () => _showDiaryCoverTypeDialog(),
+                ),
+                const SizedBox(height: 20),
+
                 _buildSectionTitle('보안 및 계정'),
                 _buildListTile(Icons.manage_accounts_outlined, '계정 관리', Colors.blueGrey, onTap: () {
                   Navigator.push(context, MaterialPageRoute(builder: (context) => AccountSettingsPage(userId: widget.userId)));
@@ -154,6 +228,223 @@ class _MyPageState extends State<MyPage> {
           ),
         ],
       )
+    );
+  }
+
+  void _showRecordingIntervalPicker() {
+    final List<int> intervals = [20, 30, 40, 50, 60];
+    int tempSelected = _recordingInterval;
+    int initialIndex = intervals.indexOf(_recordingInterval);
+    if (initialIndex < 0) initialIndex = intervals.length - 1; // 기본 60분
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFF2C2C2E),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 상단 핸들 바
+                const SizedBox(height: 8),
+                Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[600],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  '촬영 주기 설정',
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '반려동물 촬영 간격을 설정하세요',
+                  style: TextStyle(color: Colors.grey[400], fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                // CupertinoPicker 휠
+                SizedBox(
+                  height: 200,
+                  child: CupertinoPicker(
+                    scrollController: FixedExtentScrollController(initialItem: initialIndex),
+                    magnification: 1.3,
+                    squeeze: 1.2,
+                    useMagnifier: true,
+                    itemExtent: 50,
+                    selectionOverlay: Container(
+                      decoration: BoxDecoration(
+                        border: Border.symmetric(
+                          horizontal: BorderSide(color: Colors.grey[600]!, width: 0.5),
+                        ),
+                        color: Colors.white.withOpacity(0.08),
+                      ),
+                    ),
+                    onSelectedItemChanged: (index) {
+                      setModalState(() {
+                        tempSelected = intervals[index];
+                      });
+                    },
+                    children: intervals.map((val) {
+                      final isSelected = val == tempSelected;
+                      return Center(
+                        child: Text(
+                          '$val분',
+                          style: TextStyle(
+                            color: isSelected ? Colors.white : Colors.grey[500],
+                            fontSize: isSelected ? 24 : 18,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // 완료 버튼
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _recordingInterval = tempSelected;
+                        });
+                        _saveSettings();
+                        Navigator.pop(context);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('완료', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showDiaryCoverTypeDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF2C2C2E),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[600],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                '일기 대표 사진 설정',
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '일기에 표시될 대표 사진의 기준을 선택하세요',
+                style: TextStyle(color: Colors.grey[400], fontSize: 13),
+              ),
+              const SizedBox(height: 24),
+              // 행복 우선 버튼
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() => _diaryCoverType = 'happy');
+                      _saveSettings();
+                      Navigator.pop(context);
+                    },
+                    icon: const Icon(Icons.sentiment_very_satisfied, size: 22),
+                    label: const Text('행복 우선', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _diaryCoverType == 'happy' ? Colors.orange : Colors.grey[700],
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // 감정 빈도 우선 버튼
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() => _diaryCoverType = 'frequent');
+                      _saveSettings();
+                      Navigator.pop(context);
+                    },
+                    icon: const Icon(Icons.bar_chart_rounded, size: 22),
+                    label: const Text('감정 빈도 우선', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _diaryCoverType == 'frequent' ? Colors.orange : Colors.grey[700],
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSettingsTile(IconData icon, String title, Color color, {Widget? trailing, VoidCallback? onTap}) {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+        child: Icon(icon, color: color),
+      ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (trailing != null) trailing,
+          const SizedBox(width: 8),
+          const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+        ],
+      ),
+      onTap: onTap,
     );
   }
 

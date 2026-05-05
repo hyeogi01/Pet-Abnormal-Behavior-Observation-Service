@@ -703,15 +703,12 @@ def get_day_logs(user_id: str, date: str = None):
                 "data": all_days[requested_date]
             }
             
-        # 요청한 날짜에 데이터가 없으면, 데이터가 있는 가장 최근 날짜를 찾음
-        sorted_dates = sorted(all_days.keys(), reverse=True)
-        latest_date = sorted_dates[0]
-        
-        print(f"[DEBUG API] /api/day-logs/ user_id: {user_id}, requested: {requested_date}, fallback to: {latest_date}", flush=True)
+        # 요청한 날짜에 데이터가 없으면, 빈 데이터를 반환 (Fallback 제거)
+        print(f"[DEBUG API] /api/day-logs/ user_id: {user_id}, requested: {requested_date}, No data found (Fallback removed)", flush=True)
         return {
             "status": "success",
-            "date": latest_date,
-            "data": all_days[latest_date]
+            "date": requested_date,
+            "data": {}
         }
     except Exception as e:
         return {"status": "error", "message": f"Fetching day logs error: {str(e)}"}
@@ -933,5 +930,47 @@ def delete_account(data: DeleteAccountRequest):
         ref = firebase_db.reference(f'users/{data.user_id}')
         ref.delete()
         return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# ─────────────────────────── USER SETTINGS ───────────────────────────
+
+class UserSettings(BaseModel):
+    recording_interval: int = 60  # 20~60분, 10분 단위
+    diary_cover_type: str = "happy"  # "happy" 또는 "frequent"
+
+@app.post("/api/settings/{user_id}")
+def save_user_settings(user_id: str, data: UserSettings):
+    """
+    사용자 설정을 Firebase에 저장합니다.
+    - recording_interval: 촬영 주기 (20~60분, 10분 단위)
+    - diary_cover_type: 일기 대표 사진 기준 ("happy" 또는 "frequent")
+    """
+    try:
+        # Validate recording_interval
+        if data.recording_interval not in [20, 30, 40, 50, 60]:
+            return {"status": "error", "message": "촬영 주기는 20, 30, 40, 50, 60분만 설정 가능합니다."}
+        if data.diary_cover_type not in ["happy", "frequent"]:
+            return {"status": "error", "message": "대표 사진 설정은 'happy' 또는 'frequent'만 가능합니다."}
+
+        ref = firebase_db.reference(f'users/{user_id}/settings')
+        ref.set(data.model_dump())
+        return {"status": "success", "settings": data.model_dump()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/settings/{user_id}")
+def get_user_settings(user_id: str):
+    """
+    사용자 설정을 Firebase에서 조회합니다.
+    설정이 없을 경우 기본값(recording_interval=60, diary_cover_type='happy')을 반환합니다.
+    """
+    try:
+        ref = firebase_db.reference(f'users/{user_id}/settings')
+        settings = ref.get()
+        if not settings:
+            default_settings = {"recording_interval": 60, "diary_cover_type": "happy"}
+            return {"status": "success", "settings": default_settings}
+        return {"status": "success", "settings": settings}
     except Exception as e:
         return {"status": "error", "message": str(e)}
