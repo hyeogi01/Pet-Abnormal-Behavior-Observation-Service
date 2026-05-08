@@ -806,6 +806,162 @@ def get_video_gallery(user_id: str):
     except Exception as e:
         return {"status": "error", "message": f"Gallery fetching error: {str(e)}"}
 
+
+# ─────────────────────────── ALBUM APIs ───────────────────────────
+
+@app.get("/api/gallery/albums/{user_id}")
+def get_album_list(user_id: str):
+    """
+    날짜별로 그룹화된 앨범 목록을 반환합니다.
+    사용자 설정(diary_cover_type)에 따라 각 날짜의 대표사진 1장을 선정합니다.
+    """
+    try:
+        # 사용자 설정 조회
+        settings_ref = firebase_db.reference(f'users/{user_id}/settings')
+        settings = settings_ref.get() or {}
+        cover_type = settings.get("diary_cover_type", "happy")
+
+        day_ref = firebase_db.reference(f'users/{user_id}/day')
+        all_days = day_ref.get() or {}
+
+        albums = []
+        for date_key, logs_on_day in all_days.items():
+            if not isinstance(logs_on_day, dict):
+                continue
+
+            photos = []
+            for time_key, doc in logs_on_day.items():
+                if not isinstance(doc, dict):
+                    continue
+
+                beh_info = doc.get("analysis_result", {})
+                if isinstance(beh_info, dict) and beh_info.get("status") == "success":
+                    beh_data = beh_info.get("behavior_analysis", {})
+                    emotion = beh_data.get("emotion", "Unknown") if isinstance(beh_data, dict) else "Unknown"
+                else:
+                    emotion = "Unknown"
+
+                image_url = doc.get("image_url") or doc.get("video_url", "")
+                image_url = image_url.replace("minio:9000", "localhost:9000")
+                timestamp_str = doc.get("timestamp", "")
+                display_time = "Unknown"
+                if timestamp_str:
+                    try:
+                        dt = datetime.datetime.fromisoformat(timestamp_str)
+                        display_time = dt.strftime("%Y-%m-%d %H:%M:%S")
+                    except ValueError:
+                        display_time = timestamp_str
+
+                photos.append({
+                    "time_key": time_key,
+                    "image_url": image_url,
+                    "emotion": emotion,
+                    "timestamp": display_time,
+                })
+
+            if not photos:
+                continue
+
+            # 대표사진 선정
+            if cover_type == "happy":
+                cover = next((p for p in photos if p["emotion"] == "happy"), photos[0])
+            else:  # "frequent"
+                from collections import Counter
+                emotion_counts = Counter(p["emotion"] for p in photos)
+                most_common_emotion = emotion_counts.most_common(1)[0][0]
+                cover = next((p for p in photos if p["emotion"] == most_common_emotion), photos[0])
+
+            albums.append({
+                "date": date_key,
+                "cover_image_url": cover["image_url"],
+                "cover_emotion": cover["emotion"],
+                "photo_count": len(photos),
+                "photos": photos,
+            })
+
+        albums.sort(key=lambda x: x["date"], reverse=True)
+        return {"status": "success", "data": albums}
+    except Exception as e:
+        return {"status": "error", "message": f"Album list error: {str(e)}"}
+
+
+class DeletePhotosRequest(BaseModel):
+    items: list
+
+@app.delete("/api/gallery/{user_id}/photos")
+def delete_photos(user_id: str, data: DeletePhotosRequest):
+    """
+    선택한 사진들을 MinIO와 Firebase에서 삭제합니다.
+    items: [{ "date": "2026-05-07", "time_key": "14:30:00", "image_url": "http://..." }]
+    """
+    try:
+        minio_client = get_minio_client()
+        deleted = []
+        errors = []
+
+        for item in data.items:
+            date = item.get("date")
+            time_key = item.get("time_key")
+            image_url = item.get("image_url", "")
+
+            # MinIO 삭제
+            bucket_prefix = f"{DAILY_BEHAVIOR_BUCKET}/"
+            if bucket_prefix in image_url:
+                object_name = image_url.split(bucket_prefix)[-1].split("?")[0]
+                try:
+                    minio_client.remove_object(DAILY_BEHAVIOR_BUCKET, object_name)
+                except Exception as e:
+                    errors.append(f"MinIO 삭제 실패 ({object_name}): {str(e)}")
+
+            # Firebase 삭제
+            try:
+                firebase_db.reference(f'users/{user_id}/day/{date}/{time_key}').delete()
+                deleted.append(f"{date}/{time_key}")
+            except Exception as e:
+                errors.append(f"Firebase 삭제 실패 ({date}/{time_key}): {str(e)}")
+
+            # 날짜 노드가 비었으면 제거
+            try:
+                remaining = firebase_db.reference(f'users/{user_id}/day/{date}').get()
+                if not remaining:
+                    firebase_db.reference(f'users/{user_id}/day/{date}').delete()
+            except Exception:
+                pass
+
+        return {"status": "success", "deleted": deleted, "errors": errors}
+    except Exception as e:
+        return {"status": "error", "message": f"Photo delete error: {str(e)}"}
+
+
+@app.delete("/api/gallery/{user_id}/albums/{date}")
+def delete_album(user_id: str, date: str):
+    """
+    특정 날짜의 앨범 전체를 MinIO와 Firebase에서 삭제합니다.
+    """
+    try:
+        minio_client = get_minio_client()
+        day_ref = firebase_db.reference(f'users/{user_id}/day/{date}')
+        logs = day_ref.get() or {}
+
+        errors = []
+        for time_key, doc in logs.items():
+            if not isinstance(doc, dict):
+                continue
+            image_url = doc.get("image_url") or doc.get("video_url", "")
+            bucket_prefix = f"{DAILY_BEHAVIOR_BUCKET}/"
+            if bucket_prefix in image_url:
+                object_name = image_url.split(bucket_prefix)[-1].split("?")[0]
+                try:
+                    minio_client.remove_object(DAILY_BEHAVIOR_BUCKET, object_name)
+                except Exception as e:
+                    errors.append(f"MinIO 삭제 실패 ({object_name}): {str(e)}")
+
+        day_ref.delete()
+        return {"status": "success", "date": date, "deleted_count": len(logs), "errors": errors}
+    except Exception as e:
+        return {"status": "error", "message": f"Album delete error: {str(e)}"}
+
+
 # ─────────────────────────── MYPAGE APIs ───────────────────────────
 
 @app.post("/api/profile-image/{user_id}")
