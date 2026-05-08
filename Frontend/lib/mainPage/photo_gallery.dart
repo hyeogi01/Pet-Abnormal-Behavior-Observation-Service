@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:pet_diary/config.dart';
 
 class PhotoGalleryPage extends StatefulWidget {
   final String userId;
@@ -11,7 +12,7 @@ class PhotoGalleryPage extends StatefulWidget {
 }
 
 class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
-  final String baseUrl = 'http://localhost:8080'; // Make sure to change to 10.0.2.2 or real IP
+  // final String baseUrl = 'http://localhost:8080'; // Config 사용으로 제거
   List<dynamic> galleryItems = [];
   bool isLoading = true;
 
@@ -22,9 +23,9 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
   }
 
   Future<void> _fetchGalleryData() async {
-    final url = Uri.parse('$baseUrl/api/gallery/${widget.userId}');
+    final url = Uri.parse('${Config.apiBaseUrl}/api/gallery/${widget.userId}');
     try {
-      final response = await http.get(url);
+      final response = await http.get(url, headers: Config.ngrokHeaders);
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         if (decoded['status'] == 'success') {

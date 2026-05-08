@@ -19,6 +19,9 @@ from FastAPI.main.daily_behavior_inference import daily_behavior_engine
 from FastAPI.main.llm_diary import generate_daily_diary, get_diary_list
 from FastAPI.main.statistics import get_weekly_statistics
 
+# WebRTC Signaling Imports
+from FastAPI.main.webrtc_signaling import router as webrtc_router
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Load AI models in background to avoid blocking login/signup
@@ -59,6 +62,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(webrtc_router)
 
 @app.get("/ready/")
 def check_ready():

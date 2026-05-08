@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:pet_diary/discription/onboarding_page.dart'; // import 추가
+import 'package:pet_diary/config.dart';
 
 class AccountSettingsPage extends StatefulWidget {
   final String userId;
@@ -12,7 +13,7 @@ class AccountSettingsPage extends StatefulWidget {
 }
 
 class _AccountSettingsPageState extends State<AccountSettingsPage> {
-  final String baseUrl = "http://localhost:8080";
+  // final String baseUrl = "http://localhost:8080"; // Config 사용으로 제거
 
   void _showChangePasswordBottomSheet(BuildContext context) {
     final TextEditingController currentPwController = TextEditingController();
@@ -86,10 +87,10 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                     
                     setModalState(() => isLoading = true);
                     try {
-                      final url = Uri.parse('$baseUrl/api/change-password/');
+                      final url = Uri.parse('${Config.apiBaseUrl}/api/change-password/');
                       final response = await http.post(
                         url,
-                        headers: {'Content-Type': 'application/json'},
+                        headers: Config.ngrokHeaders,
                         body: jsonEncode({
                           "user_id": widget.userId,
                           "current_password": currentPwController.text,
@@ -157,10 +158,10 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                 onPressed: isLoading ? null : () async {
                   setDialogState(() => isLoading = true);
                   try {
-                    final url = Uri.parse('$baseUrl/api/delete-account/');
+                    final url = Uri.parse('${Config.apiBaseUrl}/api/delete-account/');
                     final response = await http.post(
                       url,
-                      headers: {'Content-Type': 'application/json'},
+                      headers: Config.ngrokHeaders,
                       body: jsonEncode({"user_id": widget.userId}),
                     );
                     

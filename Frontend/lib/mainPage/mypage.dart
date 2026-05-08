@@ -4,11 +4,13 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:pet_diary/discription/onboarding_page.dart'; // import for OnboardingPage
 import 'profile_edit_page.dart';
 import 'weight_history_page.dart';
 import 'account_settings_page.dart';
 import 'walking_log_page.dart';
+import 'package:pet_diary/config.dart';
 
 class MyPage extends StatefulWidget {
   final Map<String, dynamic>? petData;
@@ -29,8 +31,9 @@ class _MyPageState extends State<MyPage> {
   // 설정 상태 변수
   int _recordingInterval = 60; // 디폴트 60분
   String _diaryCoverType = 'happy'; // 디폴트: 행복 우선
+  List<dynamic> _connectedDevices = [];
 
-  final String baseUrl = "http://localhost:8080";
+  // final String baseUrl = "http://localhost:8080"; // Config 사용으로 제거
 
   @override
   void initState() {
@@ -39,12 +42,30 @@ class _MyPageState extends State<MyPage> {
     _profileImageUrl = widget.petData?['profile_image_url'];
     _coverImageUrl = widget.petData?['cover_image_url'];
     _loadSettings();
+    _fetchDevices();
+  }
+
+  Future<void> _fetchDevices() async {
+    try {
+      final url = Uri.parse('${Config.apiBaseUrl}/api/devices/list/${widget.userId}');
+      final response = await http.get(url, headers: Config.ngrokHeaders);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['status'] == 'success') {
+          setState(() {
+            _connectedDevices = data['data'];
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to fetch devices: $e');
+    }
   }
 
   Future<void> _loadSettings() async {
     try {
-      final url = Uri.parse('$baseUrl/api/settings/${widget.userId}');
-      final response = await http.get(url);
+      final url = Uri.parse('${Config.apiBaseUrl}/api/settings/${widget.userId}');
+      final response = await http.get(url, headers: Config.ngrokHeaders);
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['status'] == 'success' && data['settings'] != null) {
@@ -62,10 +83,10 @@ class _MyPageState extends State<MyPage> {
 
   Future<void> _saveSettings() async {
     try {
-      final url = Uri.parse('$baseUrl/api/settings/${widget.userId}');
+      final url = Uri.parse('${Config.apiBaseUrl}/api/settings/${widget.userId}');
       final response = await http.post(
         url,
-        headers: {'Content-Type': 'application/json'},
+        headers: Config.ngrokHeaders,
         body: jsonEncode({
           'recording_interval': _recordingInterval,
           'diary_cover_type': _diaryCoverType,
@@ -86,6 +107,22 @@ class _MyPageState extends State<MyPage> {
     }
   }
 
+  Future<void> _registerPairingCode(String code) async {
+    try {
+      final url = Uri.parse('${Config.apiBaseUrl}/api/devices/register-code');
+      await http.post(
+        url,
+        headers: Config.ngrokHeaders,
+        body: jsonEncode({
+          'pairing_code': code,
+          'user_id': widget.userId,
+        }),
+      );
+    } catch (e) {
+      debugPrint('페어링 코드 등록 실패: $e');
+    }
+  }
+
   Future<void> _pickImage(bool isCover) async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
@@ -96,8 +133,9 @@ class _MyPageState extends State<MyPage> {
   }
 
   Future<void> _uploadImage(List<int> bytes, String filename, bool isCover) async {
-    final uri = Uri.parse('$baseUrl/api/profile-image/${widget.userId}');
+    final uri = Uri.parse('${Config.apiBaseUrl}/api/profile-image/${widget.userId}');
     var request = http.MultipartRequest('POST', uri);
+    request.headers.addAll(Config.ngrokHeaders);
     request.fields['is_cover'] = isCover ? 'true' : 'false';
     
     var multipartFile = http.MultipartFile.fromBytes('file', bytes, filename: filename);
@@ -212,6 +250,29 @@ class _MyPageState extends State<MyPage> {
                 }),
                 _buildListTile(Icons.logout, '로그아웃', Colors.redAccent, onTap: () => _showLogoutDialog()),
                 const SizedBox(height: 20),
+
+                _buildSectionTitle('기기 연결'),
+                _buildListTile(Icons.devices_other, 'CCTV 기기 추가하기', Colors.deepOrange, onTap: () {
+                  _showAddDeviceDialog();
+                }),
+                if (_connectedDevices.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Text('연결된 기기 목록', style: TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(height: 5),
+                  ..._connectedDevices.map((device) {
+                    return ListTile(
+                      leading: const Icon(Icons.videocam, color: Colors.blueAccent),
+                      title: Text(device['model'] ?? '알 수 없는 기기', style: const TextStyle(fontSize: 14)),
+                      subtitle: Text('연결: ${device['connected_at'] ?? ''}', style: const TextStyle(fontSize: 12)),
+                      trailing: const Icon(Icons.check_circle, color: Colors.green, size: 16),
+                      dense: true,
+                    );
+                  }),
+                ],
+                const SizedBox(height: 20),
                 
                 _buildSectionTitle('앱 정보'),
                 const ListTile(
@@ -248,6 +309,93 @@ class _MyPageState extends State<MyPage> {
           ),
         ],
       )
+    );
+  }
+
+  void _showAddDeviceDialog() {
+    final String pairingCode = (100000 + DateTime.now().millisecondsSinceEpoch % 900000).toString(); // 6 digits
+
+    // 서버에 페어링 코드와 사용자 ID 등록 요청
+    _registerPairingCode(pairingCode);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          decoration: const BoxDecoration(
+            color: Color(0xFF2C2C2E),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[600],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'CCTV 기기 추가하기',
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '공기계에서 앱을 실행하고 [캠으로 사용하기]를 눌러\n아래 QR 코드나 6자리 코드를 입력하세요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey[400], fontSize: 13, height: 1.5),
+              ),
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: QrImageView(
+                  data: pairingCode,
+                  version: QrVersions.auto,
+                  size: 200.0,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                '연결 코드',
+                style: TextStyle(color: Colors.white54, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                pairingCode,
+                style: const TextStyle(
+                  color: Colors.orange, 
+                  fontSize: 32, 
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 8,
+                ),
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey[800],
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('닫기', style: TextStyle(color: Colors.white, fontSize: 16)),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        );
+      }
     );
   }
 
@@ -624,10 +772,10 @@ class _MyPageState extends State<MyPage> {
                         }
 
                         try {
-                          final url = Uri.parse('$baseUrl/api/walking-logs/${widget.userId}');
+                          final url = Uri.parse('${Config.apiBaseUrl}/api/walking-logs/${widget.userId}');
                           final response = await http.post(
                             url,
-                            headers: {'Content-Type': 'application/json'},
+                            headers: Config.ngrokHeaders,
                             body: jsonEncode({
                               'date': dateStr,
                               'start_time': startStr,

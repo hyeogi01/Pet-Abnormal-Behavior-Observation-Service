@@ -3,7 +3,9 @@ import 'package:pet_diary/pet_name_input_page.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:pet_diary/main.dart';
+import 'package:pet_diary/config.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:pet_diary/mainPage/cam_connect_page.dart';
 
 class OnboardingPage5 extends StatefulWidget {
   const OnboardingPage5({super.key});
@@ -25,14 +27,14 @@ class _OnboardingPage5State extends State<OnboardingPage5> {
     }
 
     final String endpoint = isSignup ? '/signup/' : '/login/';
-    final Uri url = Uri.parse('http://localhost:8080$endpoint');
+    final Uri url = Uri.parse('${Config.apiBaseUrl}$endpoint');
 
     // 다이얼로그 내부 로딩 상태 활성화 (StatefulBuilder 내의 setState 사용을 위해 아래 다이얼로그 로직에서 처리)
     
     try {
       final response = await http.post(
         url,
-        headers: {'Content-Type': 'application/json'},
+        headers: Config.ngrokHeaders,
         body: jsonEncode({'user_id': id, 'password': pw}),
       ).timeout(const Duration(seconds: 10));
 
@@ -296,6 +298,27 @@ class _OnboardingPage5State extends State<OnboardingPage5> {
                 color: Colors.grey[500],
                 decoration: TextDecoration.underline,
                 fontSize: 14,
+              ),
+            ),
+          ),
+          SizedBox(height: 8.h),
+          TextButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const CamConnectPage(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.videocam, color: Colors.orange, size: 20),
+            label: const Text(
+              "공기계를 CCTV로 사용하기",
+              style: TextStyle(
+                color: Colors.orange,
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
               ),
             ),
           ),
