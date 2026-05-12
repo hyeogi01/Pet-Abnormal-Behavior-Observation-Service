@@ -234,7 +234,7 @@ async def analyze_disease(
             length=len(contents),
             content_type="image/jpeg"
         )
-        image_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
+        image_url = f"/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
         
         if isinstance(result, dict) and result.get("status") == "success":
             result["image_url"] = image_url
@@ -339,7 +339,7 @@ def analyze_daily_behavior(
             content_type="image/jpeg"
         )
         
-        image_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
+        image_url = f"/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
         
         # Determine timestamp
         if timestamp:
@@ -459,7 +459,7 @@ async def simulate_full_day(
                 length=len(thumb_image_bytes),
                 content_type="image/jpeg"
             )
-            image_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
+            image_url = f"/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
             
             # 3-1. Extract Audio to MP3
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio_file:
@@ -480,7 +480,7 @@ async def simulate_full_day(
                         length=len(audio_bytes),
                         content_type="audio/mpeg"
                     )
-                    audio_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{audio_object_name}"
+                    audio_url = f"/{DAILY_BEHAVIOR_BUCKET}/{audio_object_name}"
                 else:
                     audio_url = ""
             except Exception as ae:
@@ -786,7 +786,11 @@ def get_video_gallery(user_id: str):
                             display_time = timestamp_str
 
                     url = doc.get("video_url") or doc.get("image_url", "")
-                    url = url.replace("minio:9000", "localhost:9000")
+                    # Replace internal/localhost URL with relative path
+                    url = url.replace("http://minio:9000", "")
+                    url = url.replace("http://localhost:9000", "")
+                    url = url.replace("minio:9000", "")
+                    url = url.replace("localhost:9000", "")
                     
                     gallery_items.append({
                         "timestamp": display_time,

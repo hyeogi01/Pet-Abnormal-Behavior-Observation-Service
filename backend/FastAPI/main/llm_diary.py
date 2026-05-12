@@ -226,7 +226,11 @@ def get_diary_list(user_id: str, limit: int = 0) -> list:
         if isinstance(day_logs, dict):
             for log in day_logs.values():
                 if isinstance(log, dict) and log.get("image_url"):
-                    url = log["image_url"].replace("minio:9000", "localhost:9000")
+                    # Use relative path instead of hardcoded ngrok/localhost to allow access from any domain (avoiding CORS/Ngrok warning)
+                    url = log["image_url"].replace("http://minio:9000", "")
+                    url = url.replace("http://localhost:9000", "")
+                    url = url.replace("minio:9000", "")
+                    url = url.replace("localhost:9000", "")
                     all_image_urls.append(url)
 
         # Pick up to 4 random images

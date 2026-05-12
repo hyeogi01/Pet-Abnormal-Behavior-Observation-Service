@@ -373,7 +373,12 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: imageUrl != null && imageUrl.isNotEmpty
-                  ? Image.network(imageUrl, fit: BoxFit.cover, errorBuilder: (ctx, err, st) => const Icon(Icons.menu_book, color: Colors.white))
+                  ? Image.network(
+                      imageUrl.startsWith('/') ? '${Config.apiBaseUrl}$imageUrl' : imageUrl,
+                      fit: BoxFit.cover,
+                      headers: Config.ngrokHeaders,
+                      errorBuilder: (ctx, err, st) => const Icon(Icons.menu_book, color: Colors.white),
+                    )
                   : const Icon(Icons.menu_book, color: Colors.white),
             ),
           ),

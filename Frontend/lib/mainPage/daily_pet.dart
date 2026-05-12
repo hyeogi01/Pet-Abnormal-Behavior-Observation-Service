@@ -478,15 +478,19 @@ class _DailyPetState extends State<daily_pet> {
             color: Colors.grey[200],
             image: images.isNotEmpty
                 ? DecorationImage(
-                    image: NetworkImage(images[0]),
+                    image: NetworkImage(
+                      images[0].startsWith('/') ? '${Config.apiBaseUrl}${images[0]}' : images[0],
+                      headers: Config.ngrokHeaders,
+                    ),
                     fit: BoxFit.cover,
                   )
                 : const DecorationImage(image: NetworkImage('https://via.placeholder.com/600x400'), fit: BoxFit.cover),
           ),
           child: images.isNotEmpty
               ? Image.network(
-                  images[0],
+                  images[0].startsWith('/') ? '${Config.apiBaseUrl}${images[0]}' : images[0],
                   fit: BoxFit.cover,
+                  headers: Config.ngrokHeaders,
                   errorBuilder: (ctx, err, st) => const Center(child: Icon(Icons.broken_image, color: Colors.grey, size: 40)),
                   width: 0, height: 0, // Hidden but triggers errorBuilder if needed
                 )
@@ -514,8 +518,9 @@ class _DailyPetState extends State<daily_pet> {
                 borderRadius: BorderRadius.circular(12),
                 child: images.length > imgIndex
                     ? Image.network(
-                        images[imgIndex],
+                        images[imgIndex].startsWith('/') ? '${Config.apiBaseUrl}${images[imgIndex]}' : images[imgIndex],
                         fit: BoxFit.cover,
+                        headers: Config.ngrokHeaders,
                         errorBuilder: (ctx, err, st) => const Center(child: Icon(Icons.broken_image, color: Colors.grey)),
                       )
                     : const Center(child: Icon(Icons.pets, color: Colors.grey)),
