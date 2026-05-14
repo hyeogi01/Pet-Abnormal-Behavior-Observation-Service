@@ -3,6 +3,77 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+const Map<String, Color> _emotionColors = {
+  'dog_happy': Color(0xFF4CAF50),
+  'cat_happy': Color(0xFF4CAF50),
+  'happy': Color(0xFF4CAF50),
+  'dog_sad': Color(0xFF9C27B0),
+  'cat_sad': Color(0xFF9C27B0),
+  'sad': Color(0xFF9C27B0),
+  'dog_angry': Color(0xFFF44336),
+  'angry': Color(0xFFF44336),
+  'dog_relaxed': Color(0xFF2196F3),
+  'cat_relaxed': Color(0xFF2196F3),
+  'relaxed': Color(0xFF2196F3),
+  'dog_anxious': Color(0xFFFF9800),
+  'dog_confused': Color(0xFF9E9E9E),
+  'cat_attentive': Color(0xFF03A9F4),
+};
+
+const Map<String, String> _emotionLabels = {
+  'dog_happy': '행복',
+  'cat_happy': '행복',
+  'happy': '행복',
+  'dog_sad': '슬픔',
+  'cat_sad': '슬픔',
+  'sad': '슬픔',
+  'dog_angry': '화남',
+  'angry': '화남',
+  'dog_relaxed': '여유',
+  'cat_relaxed': '여유',
+  'relaxed': '여유',
+  'dog_anxious': '불안',
+  'dog_confused': '혼란',
+  'cat_attentive': '집중',
+};
+
+Color _emotionColor(String emotion) =>
+    _emotionColors[emotion.toLowerCase()] ?? const Color(0xFF757575);
+
+String _emotionLabel(String emotion) =>
+    _emotionLabels[emotion.toLowerCase()] ?? emotion;
+
+Widget _buildEmotionBadge(String emotion, {double fontSize = 10}) {
+  final color = _emotionColor(emotion);
+  final label = _emotionLabel(emotion);
+  return Container(
+    padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 2.h),
+    decoration: BoxDecoration(
+      color: Colors.black54,
+      borderRadius: BorderRadius.circular(6.r),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: fontSize * 0.7,
+          height: fontSize * 0.7,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        SizedBox(width: 3.w),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: fontSize.sp,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 class PhotoGalleryPage extends StatefulWidget {
   final String userId;
   const PhotoGalleryPage({super.key, required this.userId});
@@ -22,15 +93,6 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
 
   bool _isSelecting = false;
   final Set<String> _selectedKeys = {};
-
-  static const Map<String, String> _emotionEmoji = {
-    'happy': '😊',
-    'sad': '😢',
-    'angry': '😠',
-    'relaxed': '😌',
-  };
-
-  String _emoji(String emotion) => _emotionEmoji[emotion.toLowerCase()] ?? '🐾';
 
   @override
   void initState() {
@@ -277,18 +339,11 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
                     ),
                   ),
                 ),
-              // 감정 이모티콘 (좌측상단)
+              // 감정 뱃지 (좌측상단)
               if (!_isSelecting)
                 Positioned(
                   top: 6, left: 6,
-                  child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
-                    decoration: BoxDecoration(
-                      color: Colors.black45,
-                      borderRadius: BorderRadius.circular(6.r),
-                    ),
-                    child: Text(_emoji(emotion), style: const TextStyle(fontSize: 14)),
-                  ),
+                  child: _buildEmotionBadge(emotion, fontSize: 10),
                 ),
               // 사진 수 배지 (우측상단)
               Positioned(
@@ -380,11 +435,11 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
                     size: 18,
                   ),
                 ),
-              // 감정 이모티콘 (좌측상단)
+              // 감정 뱃지 (좌측상단)
               if (!_isSelecting)
                 Positioned(
                   top: 3, left: 3,
-                  child: Text(_emoji(emotion), style: const TextStyle(fontSize: 12)),
+                  child: _buildEmotionBadge(emotion, fontSize: 9),
                 ),
               // 촬영 시간 (우측하단)
               Positioned(
@@ -414,7 +469,6 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
       builder: (ctx) => _PhotoViewerDialog(
         photos: photos,
         initialIndex: initialIndex,
-        emojiOf: _emoji,
       ),
     );
   }
@@ -429,12 +483,10 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
 class _PhotoViewerDialog extends StatefulWidget {
   final List<Map<String, dynamic>> photos;
   final int initialIndex;
-  final String Function(String) emojiOf;
 
   const _PhotoViewerDialog({
     required this.photos,
     required this.initialIndex,
-    required this.emojiOf,
   });
 
   @override
@@ -520,7 +572,7 @@ class _PhotoViewerDialogState extends State<_PhotoViewerDialog> {
               ),
             ),
 
-            // ── 하단: 감정 이모티콘 + 시간 ────────────────────────
+            // ── 하단: 감정 뱃지 + 시간 ──────────────────────────
             Positioned(
               bottom: 0, left: 0, right: 0,
               child: Container(
@@ -530,12 +582,14 @@ class _PhotoViewerDialogState extends State<_PhotoViewerDialog> {
                   top: false,
                   child: Row(
                     children: [
-                      Text(widget.emojiOf(emotion), style: const TextStyle(fontSize: 20)),
-                      const SizedBox(width: 10),
-                      Text(
-                        timeDisplay.isNotEmpty ? timeDisplay : emotion,
-                        style: const TextStyle(color: Colors.white70, fontSize: 14),
-                      ),
+                      _buildEmotionBadge(emotion, fontSize: 13),
+                      if (timeDisplay.isNotEmpty) ...[
+                        const SizedBox(width: 10),
+                        Text(
+                          timeDisplay,
+                          style: const TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
+                      ],
                     ],
                   ),
                 ),

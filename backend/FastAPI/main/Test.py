@@ -768,7 +768,7 @@ def get_video_gallery(user_id: str):
                         emotion = beh_data.get("emotion", "Unknown") if isinstance(beh_data, dict) else "Unknown"
                     else:
                         emotion = "Unknown"
-                        
+
                     timestamp_str = doc.get("timestamp", "")
                     
                     # Format timestamp for display
@@ -864,7 +864,7 @@ def get_album_list(user_id: str):
 
             # 대표사진 선정
             if cover_type == "happy":
-                cover = next((p for p in photos if p["emotion"] == "happy"), photos[0])
+                cover = next((p for p in photos if p["emotion"].endswith("happy")), photos[0])
             else:  # "frequent"
                 from collections import Counter
                 emotion_counts = Counter(p["emotion"] for p in photos)
