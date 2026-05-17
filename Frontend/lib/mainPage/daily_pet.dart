@@ -101,7 +101,9 @@ class _DailyPetState extends State<daily_pet> {
               _reportContent = diary['report'];
               _memoContent = diary['memo']; // This will update the display card
               _memoController.text = _memoContent ?? "";
-              _imageUrls = List<String>.from(diary['image_urls'] ?? []);
+              _imageUrls = List<String>.from(diary['image_urls'] ?? [])
+                  .map((url) => Config.resolveImageUrl(url))
+                  .toList();
             });
           } else {
             debugPrint("No diary found for $_currentDate");
@@ -172,7 +174,7 @@ class _DailyPetState extends State<daily_pet> {
       // 1. 시뮬레이션 및 일기 생성 요청 (Form 데이터 방식)
       final response = await http.post(
         Uri.parse('${Config.apiBaseUrl}/api/simulate-full-day'),
-        headers: Config.ngrokHeaders,
+        headers: Config.ngrokFormHeaders,
         body: {
           "user_id": userId,
           "pet_type": petType,
@@ -481,16 +483,16 @@ class _DailyPetState extends State<daily_pet> {
                     image: NetworkImage(images[0]),
                     fit: BoxFit.cover,
                   )
-                : const DecorationImage(image: NetworkImage('https://via.placeholder.com/600x400'), fit: BoxFit.cover),
+                : null,
           ),
-          child: images.isNotEmpty
-              ? Image.network(
+          child: images.isEmpty
+              ? const Center(child: Icon(Icons.pets, color: Colors.grey, size: 40))
+              : Image.network(
                   images[0],
                   fit: BoxFit.cover,
                   errorBuilder: (ctx, err, st) => const Center(child: Icon(Icons.broken_image, color: Colors.grey, size: 40)),
-                  width: 0, height: 0, // Hidden but triggers errorBuilder if needed
-                )
-              : null,
+                  width: 0, height: 0,
+                ),
         ),
         const SizedBox(height: 12),
         GridView.builder(

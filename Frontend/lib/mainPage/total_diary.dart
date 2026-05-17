@@ -119,7 +119,7 @@ class _DiaryListPageState extends State<DiaryListPage> {
               borderRadius: BorderRadius.circular(10),
               child: fullData['image_url'] != null && fullData['image_url'] != ''
                   ? Image.network(
-                      fullData['image_url'],
+                      Config.resolveImageUrl(fullData['image_url']),
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) =>
                           const Icon(Icons.pets, color: Colors.grey),

@@ -18,6 +18,9 @@ services:
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
+      # 외부 클라이언트가 이미지에 접근할 때 사용하는 공개 URL (nginx를 통해 MinIO로 프록시됨)
+      # 배포 시 실제 서버 도메인으로 변경 필요 (예: https://your-domain.com)
+      - MINIO_PUBLIC_URL=https://tissue-leverage-diocese.ngrok-free.dev
     depends_on:
       - minio
     deploy:

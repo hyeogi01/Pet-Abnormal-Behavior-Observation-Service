@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:pet_diary/config.dart';
 
 class DiaryDetailPage extends StatelessWidget {
   final Map<String, dynamic> diaryData;
@@ -12,7 +13,9 @@ class DiaryDetailPage extends StatelessWidget {
     final report = diaryData['report'] ?? '분석 레포트가 없습니다.';
     final memo = diaryData['memo'] ?? '';
     final petType = diaryData['pet_type'] ?? '반려동물';
-    final List<String> imageUrls = List<String>.from(diaryData['image_urls'] ?? []);
+    final List<String> imageUrls = List<String>.from(diaryData['image_urls'] ?? [])
+        .map((url) => Config.resolveImageUrl(url))
+        .toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF9F9F9),

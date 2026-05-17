@@ -257,7 +257,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
                             90,
                             false,
                             diaryItem['pet_diary'] ?? '내용 없음',
-                            imageUrl: diaryItem['image_url'],
+                            imageUrl: Config.resolveImageUrl(diaryItem['image_url']),
                           ),
                         );
                       }).toList(),

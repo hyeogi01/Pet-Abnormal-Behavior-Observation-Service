@@ -39,8 +39,8 @@ class _MyPageState extends State<MyPage> {
   void initState() {
     super.initState();
     _petName = widget.petData?['pet_name'] ?? '우리';
-    _profileImageUrl = widget.petData?['profile_image_url'];
-    _coverImageUrl = widget.petData?['cover_image_url'];
+    _profileImageUrl = Config.resolveImageUrl(widget.petData?['profile_image_url']);
+    _coverImageUrl = Config.resolveImageUrl(widget.petData?['cover_image_url']);
     _loadSettings();
     _fetchDevices();
   }
@@ -169,9 +169,9 @@ class _MyPageState extends State<MyPage> {
         if (data['status'] == 'success') {
           setState(() {
             if (isCover) {
-              _coverImageUrl = data['image_url'];
+              _coverImageUrl = Config.resolveImageUrl(data['image_url']);
             } else {
-              _profileImageUrl = data['image_url'];
+              _profileImageUrl = Config.resolveImageUrl(data['image_url']);
             }
           });
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('사진이 업데이트되었습니다.')));
@@ -1014,7 +1014,7 @@ class _MyPageState extends State<MyPage> {
                     if (updatedData != null) {
                       setState(() {
                         if (updatedData['name'] != null) _petName = updatedData['name'];
-                        if (updatedData['image_url'] != null) _profileImageUrl = updatedData['image_url'];
+                        if (updatedData['image_url'] != null) _profileImageUrl = Config.resolveImageUrl(updatedData['image_url']);
                       });
                     }
                   },

@@ -72,10 +72,8 @@ class _ExaminationHistoryPageState extends State<ExaminationHistoryPage> {
                 String prob = result['probability'] != null ? '${double.parse(result['probability'].toString()).toStringAsFixed(1)}%' : '';
                 String imageUrl = item['image_url'] ?? '';
 
-                // Replace minio internal host if necessary
-                if (imageUrl.contains('minio:9000')) {
-                  imageUrl = imageUrl.replaceAll('minio:9000', Config.apiBaseUrl.replaceAll('https://', '').replaceAll('http://', '').split('/')[0]);
-                }
+                // Replace minio/localhost internal host if necessary
+                imageUrl = Config.resolveImageUrl(imageUrl);
 
                 return Card(
                   margin: const EdgeInsets.only(bottom: 16),

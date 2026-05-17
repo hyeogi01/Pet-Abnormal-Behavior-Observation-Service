@@ -6,6 +6,8 @@ from minio.error import S3Error
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+# Public URL used when storing image URLs in Firebase (must be externally reachable)
+MINIO_PUBLIC_URL = os.getenv("MINIO_PUBLIC_URL", "http://localhost:9000")
 
 minio_client = None
 DAILY_BEHAVIOR_BUCKET = "daily-behavior-clips"

@@ -3,6 +3,7 @@ import json
 from datetime import datetime, timedelta
 from groq import Groq
 from firebase_admin import db as firebase_db
+from FastAPI.main.db import MINIO_PUBLIC_URL
 
 # Load .env from backend directory
 try:
@@ -226,7 +227,10 @@ def get_diary_list(user_id: str, limit: int = 0) -> list:
         if isinstance(day_logs, dict):
             for log in day_logs.values():
                 if isinstance(log, dict) and log.get("image_url"):
-                    url = log["image_url"].replace("minio:9000", "localhost:9000")
+                    url = log["image_url"]
+                    # Normalize legacy internal URLs to the current public URL
+                    url = url.replace("http://localhost:9000", MINIO_PUBLIC_URL)
+                    url = url.replace("http://minio:9000", MINIO_PUBLIC_URL)
                     all_image_urls.append(url)
 
         # Pick up to 4 random images
