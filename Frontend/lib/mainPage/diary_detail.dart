@@ -101,8 +101,8 @@ class DiaryDetailPage extends StatelessWidget {
             borderRadius: BorderRadius.circular(15),
             color: Colors.grey[200],
             image: images.isNotEmpty
-                ? DecorationImage(image: NetworkImage(images[0]), fit: BoxFit.cover)
-                : const DecorationImage(image: NetworkImage('https://via.placeholder.com/600x400'), fit: BoxFit.cover),
+                ? DecorationImage(image: NetworkImage(images[0], headers: Config.imageHeaders), fit: BoxFit.cover)
+                : null,
           ),
         ),
         const SizedBox(height: 8),
@@ -124,8 +124,8 @@ class DiaryDetailPage extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                   color: Colors.grey[200],
                   image: images.length > imgIndex
-                      ? DecorationImage(image: NetworkImage(images[imgIndex]), fit: BoxFit.cover)
-                      : const DecorationImage(image: NetworkImage('https://via.placeholder.com/150'), fit: BoxFit.cover),
+                      ? DecorationImage(image: NetworkImage(images[imgIndex], headers: Config.imageHeaders), fit: BoxFit.cover)
+                      : null,
                 ),
               );
             },

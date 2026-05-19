@@ -25,6 +25,11 @@ class Config {
     'ngrok-skip-browser-warning': '69420',
   };
 
+  // 이미지 로딩용 헤더 (NetworkImage에 전달 — Content-Type 미포함)
+  static Map<String, String> get imageHeaders => {
+    'ngrok-skip-browser-warning': '69420',
+  };
+
   // 백엔드에서 반환된 MinIO(localhost 또는 minio) 주소를 
   // 외부 접속용 serverUrl 주소로 동적 치환해주는 헬퍼 메서드
   static String resolveImageUrl(String? url) {

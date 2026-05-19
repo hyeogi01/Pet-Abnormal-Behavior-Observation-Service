@@ -326,7 +326,9 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(8.r),
                 child: coverUrl.isNotEmpty
-                    ? Image.network(coverUrl, fit: BoxFit.cover,
+                    ? Image(
+                        image: NetworkImage(coverUrl, headers: Config.imageHeaders),
+                        fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => _placeholder())
                     : _placeholder(),
               ),
@@ -426,7 +428,9 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
             children: [
               // 사진
               imageUrl.isNotEmpty
-                  ? Image.network(imageUrl, fit: BoxFit.cover,
+                  ? Image(
+                      image: NetworkImage(imageUrl, headers: Config.imageHeaders),
+                      fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => _placeholder())
                   : _placeholder(),
               // 선택 오버레이
@@ -542,8 +546,8 @@ class _PhotoViewerDialogState extends State<_PhotoViewerDialog> {
                   maxScale: 4.0,
                   child: Center(
                     child: url.isNotEmpty
-                        ? Image.network(
-                            url,
+                        ? Image(
+                            image: NetworkImage(url, headers: Config.imageHeaders),
                             fit: BoxFit.contain,
                             errorBuilder: (_, __, ___) => const Icon(
                               Icons.image_not_supported,

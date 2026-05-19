@@ -88,12 +88,12 @@ class _ExaminationHistoryPageState extends State<ExaminationHistoryPage> {
                         if (imageUrl.isNotEmpty)
                           ClipRRect(
                             borderRadius: BorderRadius.circular(12),
-                            child: Image.network(
-                              imageUrl,
+                            child: Image(
+                              image: NetworkImage(imageUrl, headers: Config.imageHeaders),
                               width: 80,
                               height: 80,
                               fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) => 
+                              errorBuilder: (context, error, stackTrace) =>
                                 Container(
                                   width: 80, height: 80, color: Colors.grey[200],
                                   child: Icon(isEye ? Icons.visibility : Icons.healing, color: Colors.grey[400]),

@@ -480,15 +480,15 @@ class _DailyPetState extends State<daily_pet> {
             color: Colors.grey[200],
             image: images.isNotEmpty
                 ? DecorationImage(
-                    image: NetworkImage(images[0]),
+                    image: NetworkImage(images[0], headers: Config.imageHeaders),
                     fit: BoxFit.cover,
                   )
                 : null,
           ),
           child: images.isEmpty
               ? const Center(child: Icon(Icons.pets, color: Colors.grey, size: 40))
-              : Image.network(
-                  images[0],
+              : Image(
+                  image: NetworkImage(images[0], headers: Config.imageHeaders),
                   fit: BoxFit.cover,
                   errorBuilder: (ctx, err, st) => const Center(child: Icon(Icons.broken_image, color: Colors.grey, size: 40)),
                   width: 0, height: 0,
@@ -515,8 +515,8 @@ class _DailyPetState extends State<daily_pet> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: images.length > imgIndex
-                    ? Image.network(
-                        images[imgIndex],
+                    ? Image(
+                        image: NetworkImage(images[imgIndex], headers: Config.imageHeaders),
                         fit: BoxFit.cover,
                         errorBuilder: (ctx, err, st) => const Center(child: Icon(Icons.broken_image, color: Colors.grey)),
                       )

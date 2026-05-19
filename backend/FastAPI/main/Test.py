@@ -327,20 +327,21 @@ def analyze_daily_behavior(
             else:
                 image_bytes = b""
 
-        # 3. Upload image to MinIO
+        # 3. Upload image to MinIO (only if frame extraction succeeded)
         minio_client = get_minio_client()
-        object_name = f"{user_id}/{uuid.uuid4()}.jpg"
-        
-        minio_client.put_object(
-            DAILY_BEHAVIOR_BUCKET,
-            object_name,
-            io.BytesIO(image_bytes),
-            length=len(image_bytes),
-            content_type="image/jpeg"
-        )
-        
-        image_url = f"{MINIO_PUBLIC_URL}/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
-        
+        if image_bytes:
+            object_name = f"{user_id}/{uuid.uuid4()}.jpg"
+            minio_client.put_object(
+                DAILY_BEHAVIOR_BUCKET,
+                object_name,
+                io.BytesIO(image_bytes),
+                length=len(image_bytes),
+                content_type="image/jpeg"
+            )
+            image_url = f"{MINIO_PUBLIC_URL}/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
+        else:
+            image_url = ""
+
         # Determine timestamp
         if timestamp:
             try:
@@ -450,16 +451,19 @@ async def simulate_full_day(
             else:
                 thumb_image_bytes = b""
 
-            # 3. MinIO Upload (Thumbnail image)
-            object_name = f"{user_id}/sim_{uuid.uuid4()}.jpg"
-            minio_client.put_object(
-                DAILY_BEHAVIOR_BUCKET,
-                object_name,
-                io.BytesIO(thumb_image_bytes),
-                length=len(thumb_image_bytes),
-                content_type="image/jpeg"
-            )
-            image_url = f"{MINIO_PUBLIC_URL}/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
+            # 3. MinIO Upload (Thumbnail image, only if frame extraction succeeded)
+            if thumb_image_bytes:
+                object_name = f"{user_id}/sim_{uuid.uuid4()}.jpg"
+                minio_client.put_object(
+                    DAILY_BEHAVIOR_BUCKET,
+                    object_name,
+                    io.BytesIO(thumb_image_bytes),
+                    length=len(thumb_image_bytes),
+                    content_type="image/jpeg"
+                )
+                image_url = f"{MINIO_PUBLIC_URL}/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
+            else:
+                image_url = ""
             
             # 3-1. Extract Audio to MP3
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio_file:

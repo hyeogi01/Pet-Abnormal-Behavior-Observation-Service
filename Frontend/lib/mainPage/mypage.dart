@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -27,6 +28,8 @@ class _MyPageState extends State<MyPage> {
   String _petName = '우리';
   String? _profileImageUrl;
   String? _coverImageUrl;
+  Uint8List? _profileImageBytes;
+  Uint8List? _coverImageBytes;
 
   // 설정 상태 변수
   int _recordingInterval = 60; // 디폴트 60분
@@ -43,6 +46,28 @@ class _MyPageState extends State<MyPage> {
     _coverImageUrl = Config.resolveImageUrl(widget.petData?['cover_image_url']);
     _loadSettings();
     _fetchDevices();
+    _loadProfileImage();
+    _loadCoverImage();
+  }
+
+  Future<void> _loadProfileImage() async {
+    if (_profileImageUrl == null || _profileImageUrl!.isEmpty) return;
+    try {
+      final res = await http.get(Uri.parse(_profileImageUrl!), headers: Config.ngrokFormHeaders);
+      if (res.statusCode == 200 && mounted) {
+        setState(() => _profileImageBytes = res.bodyBytes);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadCoverImage() async {
+    if (_coverImageUrl == null || _coverImageUrl!.isEmpty) return;
+    try {
+      final res = await http.get(Uri.parse(_coverImageUrl!), headers: Config.ngrokFormHeaders);
+      if (res.statusCode == 200 && mounted) {
+        setState(() => _coverImageBytes = res.bodyBytes);
+      }
+    } catch (_) {}
   }
 
   Future<void> _fetchDevices() async {
@@ -167,13 +192,15 @@ class _MyPageState extends State<MyPage> {
       if (response.statusCode == 200) {
         var data = jsonDecode(response.body);
         if (data['status'] == 'success') {
-          setState(() {
-            if (isCover) {
-              _coverImageUrl = Config.resolveImageUrl(data['image_url']);
-            } else {
-              _profileImageUrl = Config.resolveImageUrl(data['image_url']);
-            }
-          });
+          if (isCover) {
+            _coverImageUrl = Config.resolveImageUrl(data['image_url']);
+            setState(() => _coverImageBytes = null);
+            _loadCoverImage();
+          } else {
+            _profileImageUrl = Config.resolveImageUrl(data['image_url']);
+            setState(() => _profileImageBytes = null);
+            _loadProfileImage();
+          }
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('사진이 업데이트되었습니다.')));
         } else {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('업로드 실패: ${data['message']}')));
@@ -950,13 +977,13 @@ class _MyPageState extends State<MyPage> {
               width: double.infinity,
               decoration: BoxDecoration(
                 color: Colors.grey[300],
-                image: _coverImageUrl != null && _coverImageUrl!.isNotEmpty
-                    ? DecorationImage(image: NetworkImage(_coverImageUrl!), fit: BoxFit.cover)
+                image: _coverImageBytes != null
+                    ? DecorationImage(image: MemoryImage(_coverImageBytes!), fit: BoxFit.cover)
                     : null,
               ),
               child: Stack(
                 children: [
-                  if (_coverImageUrl == null || _coverImageUrl!.isEmpty)
+                  if (_coverImageBytes == null)
                     const Center(child: Icon(Icons.photo, size: 50, color: Colors.black26)),
                   Align(
                     alignment: Alignment.topRight,
@@ -988,10 +1015,10 @@ class _MyPageState extends State<MyPage> {
                 child: CircleAvatar(
                   radius: 50,
                   backgroundColor: Colors.blueGrey[100],
-                  backgroundImage: _profileImageUrl != null && _profileImageUrl!.isNotEmpty
-                      ? NetworkImage(_profileImageUrl!)
+                  backgroundImage: _profileImageBytes != null
+                      ? MemoryImage(_profileImageBytes!)
                       : null,
-                  child: (_profileImageUrl == null || _profileImageUrl!.isEmpty)
+                  child: _profileImageBytes == null
                       ? const Icon(Icons.pets, size: 40, color: Colors.white)
                       : null,
                 ),

@@ -146,7 +146,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                       backgroundImage: _selectedImageBytes != null
                           ? MemoryImage(_selectedImageBytes!) as ImageProvider
                           : (_currentImageUrl != null && _currentImageUrl!.isNotEmpty
-                              ? NetworkImage(_currentImageUrl!)
+                              ? NetworkImage(_currentImageUrl!, headers: Config.imageHeaders)
                               : null),
                       child: (_selectedImageBytes == null && (_currentImageUrl == null || _currentImageUrl!.isEmpty))
                           ? const Icon(Icons.pets, size: 50, color: Colors.white)
