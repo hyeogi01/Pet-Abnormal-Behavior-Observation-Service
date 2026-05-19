@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:pet_diary/config.dart';
 
 class WeightHistoryPage extends StatefulWidget {
   final String userId;
@@ -14,7 +15,7 @@ class WeightHistoryPage extends StatefulWidget {
 class _WeightHistoryPageState extends State<WeightHistoryPage> {
   List<Map<String, dynamic>> _weightData = [];
   bool _isLoading = true;
-  final String baseUrl = "http://localhost:8080";
+  // final String baseUrl = "http://localhost:8080"; // Config 사용으로 제거
 
   @override
   void initState() {
@@ -24,8 +25,8 @@ class _WeightHistoryPageState extends State<WeightHistoryPage> {
 
   Future<void> _fetchWeights() async {
     try {
-      final url = Uri.parse('$baseUrl/api/weight/${widget.userId}');
-      final response = await http.get(url);
+      final url = Uri.parse('${Config.apiBaseUrl}/api/weight/${widget.userId}');
+      final response = await http.get(url, headers: Config.ngrokHeaders);
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         if (decoded['status'] == 'success') {
@@ -85,10 +86,10 @@ class _WeightHistoryPageState extends State<WeightHistoryPage> {
 
                 // 서버 전송
                 try {
-                  final url = Uri.parse('$baseUrl/api/weight/${widget.userId}');
+                  final url = Uri.parse('${Config.apiBaseUrl}/api/weight/${widget.userId}');
                   await http.post(
                     url,
-                    headers: {'Content-Type': 'application/json'},
+                    headers: Config.ngrokHeaders,
                     body: jsonEncode({"date": todayStr, "weight": weightValue}),
                   );
                   // 새로고침

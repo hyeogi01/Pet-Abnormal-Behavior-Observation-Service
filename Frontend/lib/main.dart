@@ -10,6 +10,8 @@ import 'dart:convert';
 import 'package:pet_diary/mainPage/mypage.dart';
 import 'package:pet_diary/mainPage/photo_gallery.dart'; // Phase 4 Photo Gallery
 import 'package:pet_diary/mainPage/diary_detail.dart'; // Phase 4.1 Detail View
+import 'package:pet_diary/mainPage/monitoring_page.dart';
+import 'package:pet_diary/config.dart';
 
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:pet_diary/theme.dart';
@@ -61,8 +63,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
   // 2. Fetch recent diaries
   List<dynamic> recentDiaries = [];
   bool isDiaryLoading = true;
-  final String baseUrl = "http://localhost:8080"; 
-
+  // final String baseUrl = "http://localhost:8080"; // Config 사용으로 제거
   @override
   void initState() {
     super.initState();
@@ -85,10 +86,10 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
   }
 
   Future<void> _fetchPetInfo() async {
-    final url = Uri.parse('$baseUrl/user-pet-info/${widget.userId}');
+    final url = Uri.parse('${Config.apiBaseUrl}/user-pet-info/${widget.userId}');
 
     try {
-      final response = await http.get(url);
+      final response = await http.get(url, headers: Config.ngrokHeaders);
       if (response.statusCode == 200) {
         final Map<String, dynamic> result = json.decode(response.body);
 
@@ -109,9 +110,9 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
   }
 
   Future<void> _fetchRecentDiaries() async {
-    final url = Uri.parse('$baseUrl/api/daily-diaries/${widget.userId}?limit=3');
+    final url = Uri.parse('${Config.apiBaseUrl}/api/daily-diaries/${widget.userId}?limit=3');
     try {
-      final response = await http.get(url);
+      final response = await http.get(url, headers: Config.ngrokHeaders);
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         if (decoded['status'] == 'success') {
@@ -141,14 +142,16 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
       appBar: AppBar(
         leading: const Icon(Icons.menu, color: Colors.black),
         title: Text(
-            _selectedIndex == 1 ? 'AI 검진' : _selectedIndex == 2 ? 'Daily Behavior Diary' : (_selectedIndex == 4 ? '마이페이지' : '준비 중'),
+            _selectedIndex == 0 ? '실시간 모니터링' : _selectedIndex == 1 ? 'AI 검진' : _selectedIndex == 2 ? 'Daily Behavior Diary' : (_selectedIndex == 4 ? '마이페이지' : '사진첩'),
             style: const TextStyle(color: Colors.black, fontSize: 14, fontWeight: FontWeight.bold)
         ),
         actions: [IconButton(icon: const Icon(Icons.share, color: Colors.blue), onPressed: () {})],
       ),
 
       // 선택된 탭 인덱스에 따라 홈 화면 또는 준비중 화면 표시
-      body: _selectedIndex == 1
+      body: _selectedIndex == 0
+          ? MonitoringPage(userId: widget.userId, petData: petData) // 실시간 모니터링 페이지 연동
+          : _selectedIndex == 1
           ? ExaminationPage(petData: petData, userId: widget.userId) // 새로 만든 AI 검진 페이지 연결
           : _selectedIndex == 2
           ? _buildDashboardHome() // 홈 대시보드

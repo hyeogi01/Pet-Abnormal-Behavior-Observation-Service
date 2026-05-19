@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:pet_diary/config.dart';
 
 class daily_pet extends StatefulWidget {
   final Map<String, dynamic>? petData;
@@ -53,12 +54,8 @@ class _DailyPetState extends State<daily_pet> {
 
   Future<void> _fetchDailyStats() async {
     final String userId = widget.userId ?? 'test_user';
-    final String baseUrl = 'http://localhost:8080';
-
-    debugPrint("Fetching daily stats for userId: $userId, date: $_currentDate");
-
     try {
-      final response = await http.get(Uri.parse('$baseUrl/api/daily-stats/$userId?date=$_currentDate'));
+      final response = await http.get(Uri.parse('${Config.apiBaseUrl}/api/daily-stats/$userId?date=$_currentDate'), headers: Config.ngrokHeaders);
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
         if (result['status'] == 'success') {
@@ -84,12 +81,11 @@ class _DailyPetState extends State<daily_pet> {
 
   Future<void> _fetchSavedDiary() async {
     final String userId = widget.userId ?? 'test_user';
-    final String baseUrl = 'http://localhost:8080';
 
     debugPrint("Fetching diary for userId: $userId, date: $_currentDate");
 
     try {
-      final response = await http.get(Uri.parse('$baseUrl/api/daily-diaries/$userId?limit=0'));
+      final response = await http.get(Uri.parse('${Config.apiBaseUrl}/api/daily-diaries/$userId?limit=0'), headers: Config.ngrokHeaders);
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
         if (result['status'] == 'success') {
@@ -166,7 +162,6 @@ class _DailyPetState extends State<daily_pet> {
   Future<void> _saveDiaryAndGenerate() async {
     final String userId = widget.userId ?? 'test_user';
     final String petType = widget.petData?['pet_type'] ?? 'dog';
-    final String baseUrl = 'http://localhost:8080';
 
     setState(() {
       _isSaving = true;
@@ -176,7 +171,8 @@ class _DailyPetState extends State<daily_pet> {
     try {
       // 1. 시뮬레이션 및 일기 생성 요청 (Form 데이터 방식)
       final response = await http.post(
-        Uri.parse('$baseUrl/api/simulate-full-day'),
+        Uri.parse('${Config.apiBaseUrl}/api/simulate-full-day'),
+        headers: Config.ngrokHeaders,
         body: {
           "user_id": userId,
           "pet_type": petType,
@@ -212,15 +208,14 @@ class _DailyPetState extends State<daily_pet> {
 
   Future<void> _saveMemo({bool silent = false}) async {
     final String userId = widget.userId ?? 'test_user';
-    final String baseUrl = 'http://localhost:8080';
 
     if (!silent) setState(() => _isSaving = true);
 
     try {
       // JSON 방식이 안 될 경우를 대비해 인코딩 명시
       final response = await http.post(
-        Uri.parse('$baseUrl/api/save-memo'),
-        headers: {"Content-Type": "application/json; charset=UTF-8"},
+        Uri.parse('${Config.apiBaseUrl}/api/save-memo'),
+        headers: Config.ngrokHeaders,
         body: jsonEncode({
           "user_id": userId,
           "date": _currentDate,

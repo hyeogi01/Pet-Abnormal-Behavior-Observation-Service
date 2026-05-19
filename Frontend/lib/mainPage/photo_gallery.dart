@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:pet_diary/config.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 const Map<String, Color> _emotionColors = {
@@ -103,7 +104,12 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
   Future<void> _fetchAlbums() async {
     setState(() => _isLoading = true);
     try {
-      final res = await http.get(Uri.parse('$_baseUrl/api/gallery/albums/${widget.userId}'));
+      // 1. URL 변경: $_baseUrl 대신 Config.apiBaseUrl 적용
+      final url = Uri.parse('${Config.apiBaseUrl}/api/gallery/albums/${widget.userId}');
+      
+      // 2. 요청 변경: http.get에 Config.ngrokHeaders 추가
+      final res = await http.get(url, headers: Config.ngrokHeaders);
+      
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
         if (decoded['status'] == 'success') {
@@ -117,7 +123,7 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
     } finally {
       setState(() => _isLoading = false);
     }
-  }
+}
 
   // ── 삭제: 앨범 전체 ──────────────────────────────────────────────
   Future<void> _deleteAlbums(List<String> dates) async {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:pet_diary/config.dart';
 
 class ExaminationHistoryPage extends StatefulWidget {
   final Map<String, dynamic>? petData;
@@ -24,7 +25,7 @@ class _ExaminationHistoryPageState extends State<ExaminationHistoryPage> {
 
   Future<void> _fetchHistory() async {
     try {
-      final response = await http.get(Uri.parse('http://localhost:8080/api/examination-history/${widget.userId}'));
+      final response = await http.get(Uri.parse('${Config.apiBaseUrl}/api/examination-history/${widget.userId}'), headers: Config.ngrokHeaders);
       if (response.statusCode == 200) {
         final decoded = jsonDecode(utf8.decode(response.bodyBytes));
         if (decoded['status'] == 'success') {
@@ -73,7 +74,7 @@ class _ExaminationHistoryPageState extends State<ExaminationHistoryPage> {
 
                 // Replace minio internal host if necessary
                 if (imageUrl.contains('minio:9000')) {
-                  imageUrl = imageUrl.replaceAll('minio:9000', 'localhost:9000');
+                  imageUrl = imageUrl.replaceAll('minio:9000', Config.apiBaseUrl.replaceAll('https://', '').replaceAll('http://', '').split('/')[0]);
                 }
 
                 return Card(

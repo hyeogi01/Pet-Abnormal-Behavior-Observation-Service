@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
 import 'package:pet_diary/mainPage/examination_history.dart';
+import 'package:pet_diary/config.dart';
 
 class ExaminationPage extends StatefulWidget {
   final Map<String, dynamic>? petData;
@@ -38,8 +39,9 @@ class _ExaminationPageState extends State<ExaminationPage> {
     String petType = widget.petData?['pet_type'] ?? 'unknown';
 
     // 백엔드 API 주소 (Docker 환경에서 로컬 접속)
-    var uri = Uri.parse('http://localhost:8080/api/analyze-disease');
+    var uri = Uri.parse('${Config.apiBaseUrl}/api/analyze-disease');
     var request = http.MultipartRequest('POST', uri);
+    request.headers.addAll(Config.ngrokHeaders);
 
     // AI 모델에게 함께 보낼 메타데이터: 펫 종류와 질환 종류 (안구/피부)
     request.fields['pet_type'] = petType;

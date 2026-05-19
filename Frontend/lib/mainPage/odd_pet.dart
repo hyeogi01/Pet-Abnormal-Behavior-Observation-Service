@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:pet_diary/config.dart';
 import 'package:image_picker/image_picker.dart';
 
 class PageB extends StatefulWidget {
@@ -48,11 +49,11 @@ class _PageBState extends State<PageB> {
   Future<void> _fetchDayLogs() async {
     final now = DateTime.now();
     final todayStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    final url = Uri.parse('http://localhost:8080/api/day-logs/${widget.userId}?date=$todayStr');
+    final url = Uri.parse('${Config.apiBaseUrl}/api/day-logs/${widget.userId}?date=$todayStr');
     print('[DEBUG] Fetching day logs: userId=${widget.userId}, date=$todayStr');
 
     try {
-      final response = await http.get(url);
+      final response = await http.get(url, headers: Config.ngrokHeaders);
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         if (decoded['status'] == 'success' && decoded['data'] != null) {
@@ -181,8 +182,9 @@ class _PageBState extends State<PageB> {
 
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse('http://localhost:8080/api/analyze-patella/${widget.userId}'),
+        Uri.parse('${Config.apiBaseUrl}/api/analyze-patella/${widget.userId}'),
       );
+      request.headers.addAll(Config.ngrokHeaders);
       request.fields['pet_type'] = petType.toString().toLowerCase();
       request.files.add(http.MultipartFile.fromBytes(
         'file',

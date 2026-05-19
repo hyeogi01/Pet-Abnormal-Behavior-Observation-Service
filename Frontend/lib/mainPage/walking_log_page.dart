@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:pet_diary/config.dart';
 
 class WalkingLogPage extends StatefulWidget {
   final String userId;
@@ -15,7 +16,7 @@ class WalkingLogPage extends StatefulWidget {
 class _WalkingLogPageState extends State<WalkingLogPage> {
   List<Map<String, dynamic>> _walkingLogs = [];
   bool _isLoading = true;
-  final String baseUrl = "http://localhost:8080";
+  // final String baseUrl = "http://localhost:8080"; // Config 사용으로 제거
 
   @override
   void initState() {
@@ -25,8 +26,8 @@ class _WalkingLogPageState extends State<WalkingLogPage> {
 
   Future<void> _fetchWalkingLogs() async {
     try {
-      final url = Uri.parse('$baseUrl/api/walking-logs/${widget.userId}');
-      final response = await http.get(url);
+      final url = Uri.parse('${Config.apiBaseUrl}/api/walking-logs/${widget.userId}');
+      final response = await http.get(url, headers: Config.ngrokHeaders);
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         if (decoded['status'] == 'success') {
@@ -89,8 +90,8 @@ class _WalkingLogPageState extends State<WalkingLogPage> {
 
   Future<void> _deleteLog(String logId) async {
     try {
-      final url = Uri.parse('$baseUrl/api/walking-logs/${widget.userId}/$logId');
-      final response = await http.delete(url);
+      final url = Uri.parse('${Config.apiBaseUrl}/api/walking-logs/${widget.userId}/$logId');
+      final response = await http.delete(url, headers: Config.ngrokHeaders);
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         if (decoded['status'] == 'success') {
@@ -113,10 +114,10 @@ class _WalkingLogPageState extends State<WalkingLogPage> {
 
   Future<void> _updateLog(String logId, String date, String startTime, String endTime) async {
     try {
-      final url = Uri.parse('$baseUrl/api/walking-logs/${widget.userId}/$logId');
+      final url = Uri.parse('${Config.apiBaseUrl}/api/walking-logs/${widget.userId}/$logId');
       final response = await http.put(
         url,
-        headers: {'Content-Type': 'application/json'},
+        headers: Config.ngrokHeaders,
         body: jsonEncode({
           'date': date,
           'start_time': startTime,

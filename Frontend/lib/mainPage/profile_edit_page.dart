@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:pet_diary/config.dart';
 import 'dart:typed_data';
 
 class ProfileEditPage extends StatefulWidget {
@@ -24,7 +25,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   String? _currentImageUrl;
   bool _isLoading = false;
 
-  final String baseUrl = "http://localhost:8080";
+  // final String baseUrl = "http://localhost:8080"; // Config 사용으로 제거
 
   @override
   void initState() {
@@ -58,8 +59,9 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
 
     // 1. 이미지 변경사항이 있다면 업로드 (바이트 배열 기반, 웹 호환)
     if (_selectedImageBytes != null && _selectedImageName != null) {
-      final uri = Uri.parse('$baseUrl/api/profile-image/${widget.userId}');
+      final uri = Uri.parse('${Config.apiBaseUrl}/api/profile-image/${widget.userId}');
       var request = http.MultipartRequest('POST', uri);
+      request.headers.addAll(Config.ngrokHeaders);
       request.fields['is_cover'] = 'false';
       
       var multipartFile = http.MultipartFile.fromBytes('file', _selectedImageBytes!, filename: _selectedImageName);
@@ -81,10 +83,10 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
 
     // 2. 이름 갱신 (항상 진행)
     try {
-      final nameUri = Uri.parse('$baseUrl/api/update-pet-info/${widget.userId}');
+      final nameUri = Uri.parse('${Config.apiBaseUrl}/api/update-pet-info/${widget.userId}');
       final response = await http.post(
         nameUri,
-        headers: {'Content-Type': 'application/json'},
+        headers: Config.ngrokHeaders,
         body: jsonEncode({"pet_name": _nameController.text})
       );
       

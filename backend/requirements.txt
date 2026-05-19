@@ -1,6 +1,7 @@
 # FastAPI and server
 fastapi
-uvicorn
+uvicorn[standard]
+websockets
 pydantic
 firebase-admin
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:pet_diary/config.dart';
 import 'diary_detail.dart';
 import 'daily_pet.dart';
 import '../main.dart'; // petData 등에 접근하기 위해 필요할 수 있으나userId와 initialDate 위주로 처리
@@ -13,7 +14,7 @@ class DiaryListPage extends StatefulWidget {
 }
 
 class _DiaryListPageState extends State<DiaryListPage> {
-  final String baseUrl = 'http://localhost:8080'; // !IMPORTANT: 안드로이드 실기기 IP 입력 부분 (예: 192.168.0.X:8080)
+  // final String baseUrl = 'http://localhost:8080'; // Config 사용으로 제거
   List<dynamic> diaries = [];
   bool isLoading = true;
 
@@ -25,9 +26,9 @@ class _DiaryListPageState extends State<DiaryListPage> {
 
   Future<void> _fetchTotalDiaries() async {
     // limit=0 means fetch all
-    final url = Uri.parse('$baseUrl/api/daily-diaries/${widget.userId}?limit=0');
+    final url = Uri.parse('${Config.apiBaseUrl}/api/daily-diaries/${widget.userId}?limit=0');
     try {
-      final response = await http.get(url);
+      final response = await http.get(url, headers: Config.ngrokHeaders);
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         if (decoded['status'] == 'success') {
