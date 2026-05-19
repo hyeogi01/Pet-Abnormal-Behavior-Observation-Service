@@ -99,7 +99,8 @@ class _CamSenderPageState extends State<CamSenderPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
+      body: SizedBox.expand(
+        child: Stack(
         children: [
           // 영상 렌더러
           Positioned.fill(
@@ -197,6 +198,7 @@ class _CamSenderPageState extends State<CamSenderPage> {
             ),
           ),
         ],
+      ),
       ),
     );
   }
