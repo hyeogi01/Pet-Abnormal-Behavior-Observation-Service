@@ -11,10 +11,12 @@ RUN pip install --upgrade pip
 RUN apt-get update && apt-get install -y ffmpeg libsm6 libxext6 libsndfile1 && rm -rf /var/lib/apt/lists/*
 
 # Copy the requirements file into the container at /app
-# We assume there is or will be a requirements.txt file in backend/
 COPY requirements.txt ./
 
-# Install any dependencies specified in requirements.txt
+# Install PyTorch with CUDA 12.6 (matches driver 560.78 / CUDA 12.6)
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu126
+
+# Install remaining dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the backend directory contents into the container at /app

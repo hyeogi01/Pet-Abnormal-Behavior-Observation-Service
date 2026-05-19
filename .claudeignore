@@ -1,0 +1,6 @@
+build/
+.dart_tool/
+venv/
+__pycache__/
+*.log
+docker-data/

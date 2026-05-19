@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter analyze *)",
+      "Bash(flutter --version)",
+      "Bash(python -m py_compile \"backend/FastAPI/main/daily_behavior_inference.py\")",
+      "Bash(docker exec pet-abnormal-behavior-observation-service-backend-1 *)",
+      "Bash(docker-compose build *)"
+    ]
+  }
+}
