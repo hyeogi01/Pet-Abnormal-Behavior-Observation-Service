@@ -8,8 +8,8 @@ firebase-admin
 python-multipart
 
 # AI Model inference
-torch
-torchvision
+# torch/torchvision installed via Dockerfile with CUDA 12.6 index
+Pillow
 Pillow
 numpy
 
