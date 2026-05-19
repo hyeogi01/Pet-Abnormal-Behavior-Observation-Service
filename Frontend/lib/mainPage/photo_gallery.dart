@@ -99,9 +99,8 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
             color: Colors.grey[300],
             child: videoUrl.isNotEmpty 
               ? Image.network(
-                  videoUrl.startsWith('/') ? '${Config.apiBaseUrl}$videoUrl' : videoUrl,
+                  videoUrl,
                   fit: BoxFit.cover,
-                  headers: Config.ngrokHeaders,
                   errorBuilder: (context, error, stackTrace) {
                     return const Icon(Icons.image_not_supported, color: Colors.white, size: 40);
                   },

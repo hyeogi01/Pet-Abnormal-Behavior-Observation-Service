@@ -20,7 +20,6 @@ class CamSenderPage extends StatefulWidget {
 
 class _CamSenderPageState extends State<CamSenderPage> {
   final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
-  final RTCVideoRenderer _audioRenderer = RTCVideoRenderer(); // 수신된 음성을 재생하기 위한 렌더러
   MediaStream? _localStream;
   bool _isStreaming = false;
   WebRTCService? _webrtcService;
@@ -33,28 +32,20 @@ class _CamSenderPageState extends State<CamSenderPage> {
 
   Future<void> _initRenderer() async {
     await _localRenderer.initialize();
-    await _audioRenderer.initialize();
     _startCamera();
   }
 
   Future<void> _startCamera() async {
     final Map<String, dynamic> mediaConstraints = {
-      'audio': {
-        'echoCancellation': true,
-        'noiseSuppression': true,
-      },
+      'audio': true,
       'video': {
         'facingMode': 'environment', // 후면 카메라 기본
-        'width': {'ideal': 1280},
-        'height': {'ideal': 720},
       }
     };
 
     try {
       final stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
       _localRenderer.srcObject = stream;
-      _localRenderer.muted = true; // 본인 목소리가 스피커로 나가지 않도록 뮤트 (에코 방지 핵심)
-      
       setState(() {
         _localStream = stream;
         _isStreaming = true;
@@ -70,16 +61,6 @@ class _CamSenderPageState extends State<CamSenderPage> {
       
       _webrtcService?.onConnectionState = (state) {
         debugPrint('WebRTC Sender State: $state');
-      };
-      
-      _webrtcService?.onRemoteStream = (stream) {
-        // 수신된 스트림(보호자의 음성)을 오디오 렌더러에 할당하여 출력
-        debugPrint('Sender received remote stream (voice).');
-        if (mounted) {
-          setState(() {
-            _audioRenderer.srcObject = stream;
-          });
-        }
       };
       
       await _webrtcService?.init(_localStream);
@@ -111,7 +92,6 @@ class _CamSenderPageState extends State<CamSenderPage> {
     _webrtcService?.dispose();
     _localStream?.dispose();
     _localRenderer.dispose();
-    _audioRenderer.dispose();
     super.dispose();
   }
 
@@ -122,20 +102,16 @@ class _CamSenderPageState extends State<CamSenderPage> {
       body: Stack(
         children: [
           // 영상 렌더러
-          // 영상 렌더러 (전체 화면)
-          _isStreaming
-              ? SizedBox.expand(
-                  child: RTCVideoView(
+          Positioned.fill(
+            child: _isStreaming
+                ? RTCVideoView(
                     _localRenderer,
                     objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                  )
+                : const Center(
+                    child: CircularProgressIndicator(color: Colors.orange),
                   ),
-                )
-              : const Center(
-                  child: CircularProgressIndicator(color: Colors.orange),
-                ),
-          
-          // 수신 음성 재생을 위한 숨겨진 렌더러 (일부 기기에서 필요)
-          SizedBox(width: 1, height: 1, child: RTCVideoView(_audioRenderer)),
+          ),
           
           // 상단 UI (뒤로가기 및 상태)
           SafeArea(

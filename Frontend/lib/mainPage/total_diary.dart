@@ -119,11 +119,8 @@ class _DiaryListPageState extends State<DiaryListPage> {
               borderRadius: BorderRadius.circular(10),
               child: fullData['image_url'] != null && fullData['image_url'] != ''
                   ? Image.network(
-                      fullData['image_url'].toString().startsWith('/') 
-                          ? '${Config.apiBaseUrl}${fullData['image_url']}' 
-                          : fullData['image_url'],
+                      fullData['image_url'],
                       fit: BoxFit.cover,
-                      headers: Config.ngrokHeaders,
                       errorBuilder: (context, error, stackTrace) =>
                           const Icon(Icons.pets, color: Colors.grey),
                     )

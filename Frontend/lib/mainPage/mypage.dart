@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'dart:async';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -63,6 +62,26 @@ class _MyPageState extends State<MyPage> {
     }
   }
 
+  Future<void> _deleteDevice(String deviceId) async {
+    try {
+      final url = Uri.parse('${Config.apiBaseUrl}/api/devices/${widget.userId}/$deviceId');
+      final response = await http.delete(url, headers: Config.ngrokHeaders);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['status'] == 'success') {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('기기가 삭제되었습니다.')),
+            );
+          }
+          _fetchDevices(); // 목록 새로고침
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to delete device: $e');
+    }
+  }
+
   Future<void> _loadSettings() async {
     try {
       final url = Uri.parse('${Config.apiBaseUrl}/api/settings/${widget.userId}');
@@ -106,43 +125,6 @@ class _MyPageState extends State<MyPage> {
         SnackBar(content: Text('설정 저장 실패: $e')),
       );
     }
-  }
-
-  Future<void> _deleteDevice(String deviceId) async {
-    try {
-      final url = Uri.parse('${Config.apiBaseUrl}/api/devices/${widget.userId}/$deviceId');
-      final response = await http.delete(url, headers: Config.ngrokHeaders);
-      if (response.statusCode == 200) {
-        await _fetchDevices();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('기기가 삭제되었습니다.')),
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint('Failed to delete device: $e');
-    }
-  }
-
-  void _showDeleteDeviceDialog(String deviceId, String? model) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('기기 삭제'),
-        content: Text('${model ?? '이 기기'}를 목록에서 삭제하시겠습니까?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _deleteDevice(deviceId);
-            },
-            child: const Text('삭제', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _registerPairingCode(String code) async {
@@ -305,10 +287,18 @@ class _MyPageState extends State<MyPage> {
                       leading: const Icon(Icons.videocam, color: Colors.blueAccent),
                       title: Text(device['model'] ?? '알 수 없는 기기', style: const TextStyle(fontSize: 14)),
                       subtitle: Text('연결: ${device['connected_at'] ?? ''}', style: const TextStyle(fontSize: 12)),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                        onPressed: () => _showDeleteDeviceDialog(device['device_id'], device['model']),
-                        tooltip: '기기 삭제',
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.check_circle, color: Colors.green, size: 16),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                            onPressed: () {
+                              _deleteDevice(device['device_id']);
+                            },
+                          ),
+                        ],
                       ),
                       dense: true,
                     );
@@ -356,125 +346,89 @@ class _MyPageState extends State<MyPage> {
 
   void _showAddDeviceDialog() {
     final String pairingCode = (100000 + DateTime.now().millisecondsSinceEpoch % 900000).toString(); // 6 digits
-    final int initialDeviceCount = _connectedDevices.length;
-    Timer? pollingTimer;
 
     // 서버에 페어링 코드와 사용자 ID 등록 요청
     _registerPairingCode(pairingCode);
-
-    // 실시간 등록 감지를 위한 폴링 시작 (2초 간격)
-    pollingTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
-      await _fetchDevices();
-      if (_connectedDevices.length > initialDeviceCount) {
-        // 새로운 기기 등록 감지!
-        if (mounted) {
-          final newDevice = _connectedDevices.firstWhere(
-            (d) => !(_connectedDevices.any((old) => old['device_id'] == d['device_id'])),
-            orElse: () => _connectedDevices.last,
-          );
-          
-          Navigator.pop(context); // 다이얼로그 닫기
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('기기(${newDevice['model'] ?? '알 수 없는 모델'})가 성공적으로 등록되었습니다!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-        timer.cancel();
-      }
-    });
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        return WillPopScope(
-          onWillPop: () async {
-            pollingTimer?.cancel();
-            return true;
-          },
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: const BoxDecoration(
-              color: Color(0xFF2C2C2E),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 40, height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[600],
-                    borderRadius: BorderRadius.circular(2),
+        return Container(
+          padding: const EdgeInsets.all(24),
+          decoration: const BoxDecoration(
+            color: Color(0xFF2C2C2E),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[600],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'CCTV 기기 추가하기',
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '공기계에서 앱을 실행하고 [캠으로 사용하기]를 눌러\n아래 QR 코드나 6자리 코드를 입력하세요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey[400], fontSize: 13, height: 1.5),
+              ),
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: QrImageView(
+                  data: pairingCode,
+                  version: QrVersions.auto,
+                  size: 200.0,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                '연결 코드',
+                style: TextStyle(color: Colors.white54, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                pairingCode,
+                style: const TextStyle(
+                  color: Colors.orange, 
+                  fontSize: 32, 
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 8,
+                ),
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey[800],
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
+                  child: const Text('닫기', style: TextStyle(color: Colors.white, fontSize: 16)),
                 ),
-                const SizedBox(height: 20),
-                const Text(
-                  'CCTV 기기 추가하기',
-                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  '공기계에서 앱을 실행하고 [캠으로 사용하기]를 눌러\n아래 QR 코드나 6자리 코드를 입력하세요.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey[400], fontSize: 13, height: 1.5),
-                ),
-                const SizedBox(height: 24),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: QrImageView(
-                    data: pairingCode,
-                    version: QrVersions.auto,
-                    size: 200.0,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  '연결 코드',
-                  style: TextStyle(color: Colors.white54, fontSize: 14),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  pairingCode,
-                  style: const TextStyle(
-                    color: Colors.orange, 
-                    fontSize: 32, 
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 8,
-                  ),
-                ),
-                const SizedBox(height: 32),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      pollingTimer?.cancel();
-                      Navigator.pop(context);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.grey[800],
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text('닫기', style: TextStyle(color: Colors.white, fontSize: 16)),
-                  ),
-                ),
-                const SizedBox(height: 20),
-              ],
-            ),
+              ),
+              const SizedBox(height: 20),
+            ],
           ),
         );
       }
-    ).whenComplete(() {
-      pollingTimer?.cancel();
-    });
+    );
   }
 
   void _showRecordingIntervalPicker() {
