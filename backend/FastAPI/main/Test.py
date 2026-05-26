@@ -549,6 +549,33 @@ async def get_daily_diary(user_id: str, date: str = None):
     except Exception as e:
         return {"status": "error", "message": f"Diary generation error: {str(e)}"}
 
+@app.get("/api/diary-debug/{user_id}")
+async def get_diary_debug(user_id: str, date: str = None):
+    """
+    LLM 호출 없이 요약 카드와 플래그만 반환 — 프롬프트 데이터 검증용.
+    date format: YYYY-MM-DD
+    """
+    from FastAPI.main.llm_diary import get_daily_logs_for_diary, _build_summary_card
+    try:
+        logs = get_daily_logs_for_diary(user_id, date)
+        if not logs:
+            return {"status": "error", "message": "해당 날짜의 로그가 없습니다.", "log_count": 0}
+
+        summary_card, has_negative_sound, has_negative_behavior, has_patella, dominant_positive = _build_summary_card(logs)
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "date": date,
+            "log_count": len(logs),
+            "summary_card": summary_card,
+            "has_negative_sound": has_negative_sound,
+            "has_negative_behavior": has_negative_behavior,
+            "has_patella": has_patella,
+            "dominant_positive": dominant_positive,
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.get("/api/statistics/{user_id}")
 async def get_pet_statistics(user_id: str, pet_type: str):
     """
