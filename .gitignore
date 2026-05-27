@@ -65,3 +65,8 @@ app.*.map.json
 .env
 *.mp4
 /Frontend/linux/flutter
+
+# YOLOv8 TFLite 변환 중간 산출물
+backend/yolov8n.onnx
+backend/yolov8n_saved_model/
+backend/*.npy
