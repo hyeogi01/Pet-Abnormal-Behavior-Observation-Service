@@ -6,6 +6,8 @@ import 'package:pet_diary/main.dart';
 import 'package:pet_diary/config.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:pet_diary/mainPage/cam_connect_page.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class OnboardingPage5 extends StatefulWidget {
   const OnboardingPage5({super.key});
@@ -16,6 +18,72 @@ class OnboardingPage5 extends StatefulWidget {
 
 class _OnboardingPage5State extends State<OnboardingPage5> {
   bool _isLoading = false;
+
+  Future<void> _handleGoogleSignIn() async {
+    try {
+      debugPrint('[Google] 1. GoogleSignIn 시작');
+      final _googleSignIn = GoogleSignIn();
+      await _googleSignIn.signOut();
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        debugPrint('[Google] 사용자가 취소함');
+        return;
+      }
+      debugPrint('[Google] 2. 계정 선택 완료: ${googleUser.email}');
+
+      final googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      debugPrint('[Google] 3. credential 생성 완료');
+
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      final idToken = await userCredential.user!.getIdToken();
+      debugPrint('[Google] 4. Firebase idToken 발급 완료');
+      debugPrint('[Google] 5. 백엔드 URL: ${Config.apiBaseUrl}/auth/google/');
+
+      final response = await http.post(
+        Uri.parse('${Config.apiBaseUrl}/auth/google/'),
+        headers: {
+          ...Config.ngrokHeaders,
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'id_token': idToken}),
+      ).timeout(const Duration(seconds: 10));
+
+      debugPrint('[Google] 6. 백엔드 응답: ${response.statusCode} ${response.body}');
+
+      final result = jsonDecode(response.body);
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200 && result['status'] == 'success') {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        if (result['has_pet_info']) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => PetHealthDashboard(userId: result['user_id'])),
+          );
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => PetNameInputPage(userId: result['user_id'])),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("구글 로그인 실패: ${result['message'] ?? '알 수 없는 오류'}")),
+        );
+      }
+    } catch (e) {
+      debugPrint('[Google] 오류 발생: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("구글 로그인 오류: $e")),
+      );
+    }
+  }
 
   // 1. 서버와 통신하는 실제 로직 (로그인/회원가입만 신속히 처리)
   Future<void> _handleAuth(BuildContext dialogContext, String id, String pw, bool isSignup) async {
@@ -269,7 +337,7 @@ class _OnboardingPage5State extends State<OnboardingPage5> {
             label: "Google로 시작하기",
             color: Colors.white,
             textColor: Colors.black,
-            onTap: () {},
+            onTap: _handleGoogleSignIn,
             isBorder: true,
           ),
           SizedBox(height: 10.h),

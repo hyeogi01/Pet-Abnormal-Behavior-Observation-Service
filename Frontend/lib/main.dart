@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:pet_diary/mainPage/total_diary.dart';
 import 'package:pet_diary/mainPage/odd_pet.dart';
 import 'package:pet_diary/mainPage/daily_pet.dart';
@@ -17,6 +18,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:pet_diary/theme.dart';
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   await ScreenUtil.ensureScreenSize();
   runApp(
     ScreenUtilInit(

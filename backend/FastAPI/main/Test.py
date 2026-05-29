@@ -2,7 +2,7 @@ from fastapi import FastAPI, File, UploadFile, Form
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 import firebase_admin
-from firebase_admin import credentials, db as firebase_db
+from firebase_admin import credentials, db as firebase_db, auth as firebase_auth
 from fastapi.middleware.cors import CORSMiddleware
 import io
 import datetime
@@ -72,6 +72,41 @@ def check_ready():
         "status": "ready" if daily_behavior_engine.is_loaded else "loading",
         "detail": "AI models are still initializing in the background." if not daily_behavior_engine.is_loaded else "All systems ready."
     }
+
+# 구글 소셜 로그인
+class GoogleAuthRequest(BaseModel):
+    id_token: str
+
+@app.post("/auth/google/")
+async def google_login(req: GoogleAuthRequest):
+    try:
+        decoded_token = firebase_auth.verify_id_token(req.id_token)
+        uid = decoded_token['uid']
+        email = decoded_token.get('email', '')
+        name = decoded_token.get('name', '')
+
+        ref = firebase_db.reference(f'users/{uid}')
+        user_data = ref.get()
+
+        if not user_data:
+            ref.set({
+                "email": email,
+                "name": name,
+                "auth_provider": "google"
+            })
+            has_pet_info = False
+        else:
+            has_pet_info = isinstance(user_data, dict) and 'pet_info' in user_data
+
+        return {
+            "status": "success",
+            "user_id": uid,
+            "email": email,
+            "has_pet_info": has_pet_info
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 
 # 사용자 로그인
 class User(BaseModel):
