@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "99670463567",
+    "firebase_url": "https://test-25cac-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "test-25cac",
+    "storage_bucket": "test-25cac.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:99670463567:android:dc8af376f19842c47c863a",
+        "android_client_info": {
+          "package_name": "com.example.pet_diary"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "99670463567-gqt1sn2d0njfieqqgs2d14bog56cvt06.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.pet_diary",
+            "certificate_hash": "8a7ff6baadd4fb483fa219661a46fe598287f321"
+          }
+        },
+        {
+          "client_id": "99670463567-57pkbdjuu85dsca3h3ab15cisjcrjqps.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD40ttKWW2sJscJNzK86QDIW1IK0uz-QMI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "99670463567-57pkbdjuu85dsca3h3ab15cisjcrjqps.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
