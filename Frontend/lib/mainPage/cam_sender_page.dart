@@ -176,7 +176,7 @@ class _CamSenderPageState extends State<CamSenderPage> {
       final Uint8List frameBytes = buf.asUint8List();
 
       // 2. 온디바이스 YOLO 추론
-      final petFound = await _petDetector.detect(frameBytes);
+      final petFound = await _petDetector.detect(frameBytes, petType: _petType);
       if (!petFound) {
         debugPrint('[CamSender] No pet → retry in $_retryIntervalMinutes min');
         _scheduleRetry();

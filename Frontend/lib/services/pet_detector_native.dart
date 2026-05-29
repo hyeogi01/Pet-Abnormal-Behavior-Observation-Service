@@ -32,9 +32,20 @@ class PetDetector {
     }
   }
 
+  // petType 문자열("강아지 (말티즈)", "고양이 (페르시안)", "dog", "cat" 등)을
+  // 해당 YOLO 출력 row 목록으로 변환한다. 알 수 없는 종류는 양쪽 검사(fail-open).
+  static List<int> _rowsForPetType(String? petType) {
+    if (petType == null) return _petRows;
+    final raw = petType.toLowerCase();
+    if (raw.contains('강아지') || raw.contains('dog')) return [20];
+    if (raw.contains('고양이') || raw.contains('cat')) return [19];
+    return _petRows;
+  }
+
   /// 이미지에서 반려동물(cat/dog) 존재 여부를 반환한다.
+  /// petType을 전달하면 해당 종류의 동물만 탐지한다.
   /// 모델 미로드 또는 추론 오류 시 true를 반환하여 데이터 손실을 방지한다.
-  Future<bool> detect(Uint8List imageBytes) async {
+  Future<bool> detect(Uint8List imageBytes, {String? petType}) async {
     if (_interpreter == null) return true;
 
     try {
@@ -60,10 +71,9 @@ class PetDetector {
 
       _interpreter!.run(input, output);
 
-      // cat(row 19) 또는 dog(row 20) confidence가 threshold 이상인 예측이 하나라도 있으면 감지
-      // NMS 불필요 — 위치가 아닌 존재 여부만 판단하므로 단순 스캔으로 충분
+      final rowsToCheck = _rowsForPetType(petType);
       for (int i = 0; i < _numPredictions; i++) {
-        for (final row in _petRows) {
+        for (final row in rowsToCheck) {
           if (output[0][row][i] >= _threshold) {
             debugPrint('[PetDetector] Pet detected at pred=$i, row=$row, conf=${output[0][row][i].toStringAsFixed(3)}');
             return true;

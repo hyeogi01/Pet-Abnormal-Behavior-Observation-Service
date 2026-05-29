@@ -10,7 +10,7 @@ class PetDetector {
     debugPrint('[PetDetector] Stub mode (web/desktop) — TFLite unavailable');
   }
 
-  Future<bool> detect(Uint8List imageBytes) async => true;
+  Future<bool> detect(Uint8List imageBytes, {String? petType}) async => true;
 
   void dispose() {}
 }
