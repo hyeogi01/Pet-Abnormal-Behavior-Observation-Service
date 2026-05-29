@@ -31,13 +31,13 @@ class _CamSenderPageState extends State<CamSenderPage> {
 
   // 온디바이스 YOLO 감지 + 주기적 캡처
   final PetDetector _petDetector = PetDetector();
-  int _recordingIntervalMinutes = 60;
+  int _recordingIntervalMinutes = 1;
   String _petType = 'dog';
   bool _isInDetectionLoop = false;
   bool _isCapturing = false;
   Timer? _normalTimer;
   Timer? _retryTimer;
-  static const int _retryIntervalMinutes = 2;
+  static const int _retryIntervalMinutes = 1;
 
   @override
   void initState() {
