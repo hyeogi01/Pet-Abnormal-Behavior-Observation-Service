@@ -1,4 +1,5 @@
 from fastapi import FastAPI, File, UploadFile, Form
+from typing import List
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 import firebase_admin
@@ -236,59 +237,57 @@ def save_log_direct(req: DirectLogRequest):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# AI 질환 분석 API
+# AI 질환 분석 API (다중 이미지 지원: 1~5장 평균 앙상블)
 @app.post("/api/analyze-disease")
 async def analyze_disease(
     user_id: str = Form(...),
     pet_type: str = Form(...),
     disease_type: str = Form(...),
-    file: UploadFile = File(...)
+    files: List[UploadFile] = File(...)
 ):
-    import uuid
-    import datetime
-    import io
     try:
-        contents = await file.read()
-        
-        # ai_engine 추론 로직 호출
-        result = ai_engine.analyze(
-            image_bytes=contents,
+        all_contents = [await f.read() for f in files]
+
+        # 다중 이미지 배치 추론 (softmax 평균)
+        result = ai_engine.analyze_batch(
+            images_bytes=all_contents,
             pet_type=pet_type,
             disease_type=disease_type
         )
-        
-        # Upload object to MinIO
+
+        # MinIO: 첫 번째 이미지를 대표 이미지로 저장
         minio_client = get_minio_client()
         file_id = str(uuid.uuid4())
         object_name = f"{user_id}/examination/{disease_type}/{file_id}.jpg"
-        
+        first_bytes = all_contents[0]
+
         minio_client.put_object(
             DAILY_BEHAVIOR_BUCKET,
             object_name,
-            io.BytesIO(contents),
-            length=len(contents),
+            io.BytesIO(first_bytes),
+            length=len(first_bytes),
             content_type="image/jpeg"
         )
         image_url = f"{MINIO_PUBLIC_URL}/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
-        
+
         if isinstance(result, dict) and result.get("status") == "success":
             result["image_url"] = image_url
-            
-            # Save to Firebase
+
             log_time = datetime.datetime.now()
             date_str = log_time.strftime("%Y-%m-%d")
             time_str = log_time.strftime("%H:%M:%S")
-            
+
             ref = firebase_db.reference(f'users/{user_id}/Examination_Results/{file_id}')
             ref.set({
                 "date": date_str,
                 "time": time_str,
                 "timestamp": log_time.isoformat(),
                 "category": disease_type,
+                "images_analyzed": len(all_contents),
                 "result": result,
                 "image_url": image_url
             })
-            
+
         return result
     except Exception as e:
         return {"status": "error", "message": f"Server processing error: {str(e)}"}
