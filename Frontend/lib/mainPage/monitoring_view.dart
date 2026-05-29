@@ -72,12 +72,69 @@ class _MonitoringViewState extends State<MonitoringView> {
     super.dispose();
   }
 
+  void _showFullScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          backgroundColor: Colors.black,
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: RTCVideoView(
+                  _remoteRenderer,
+                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                ),
+              ),
+              SafeArea(
+                child: Align(
+                  alignment: Alignment.topRight,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white, size: 32),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ),
+                ),
+              ),
+              // 상태 표시 (전체화면용)
+              SafeArea(
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text('LIVE 송출 중', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: 220,
-      decoration: BoxDecoration(
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
         color: Colors.black87,
         borderRadius: BorderRadius.circular(15),
         boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
@@ -87,9 +144,11 @@ class _MonitoringViewState extends State<MonitoringView> {
         child: Stack(
           children: [
             if (_isConnected)
-              RTCVideoView(
-                _remoteRenderer,
-                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+              Positioned.fill(
+                child: RTCVideoView(
+                  _remoteRenderer,
+                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                ),
               )
             else if (_isConnecting)
               const Center(
@@ -148,9 +207,24 @@ class _MonitoringViewState extends State<MonitoringView> {
                 ),
               ),
             ),
+            
+            // 전체화면 확대 버튼
+            if (_isConnected)
+              Positioned(
+                bottom: 8,
+                right: 8,
+                child: IconButton(
+                  icon: const Icon(Icons.fullscreen, color: Colors.white, size: 28),
+                  onPressed: _showFullScreen,
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black45,
+                    padding: const EdgeInsets.all(8),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
-    );
+    ));
   }
 }

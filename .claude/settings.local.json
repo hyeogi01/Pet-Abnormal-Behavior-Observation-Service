@@ -5,7 +5,13 @@
       "Bash(flutter --version)",
       "Bash(python -m py_compile \"backend/FastAPI/main/daily_behavior_inference.py\")",
       "Bash(docker exec pet-abnormal-behavior-observation-service-backend-1 *)",
-      "Bash(docker-compose build *)"
+      "Bash(docker-compose build *)",
+      "PowerShell(Get-Command *)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\JW\" -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match \"python|conda|venv|env\" } | Select-Object Name, FullName)",
+      "PowerShell(curl *)",
+      "PowerShell(Invoke-RestMethod -Uri \"http://localhost:8080/api/diary-debug/66?date=2026-05-04\" -Method Get | ConvertTo-Json -Depth 5)",
+      "PowerShell(docker restart pet-abnormal-behavior-observation-service-backend-1 *)",
+      "Bash(curl *)"
     ]
   }
 }

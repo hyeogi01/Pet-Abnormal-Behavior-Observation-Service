@@ -309,7 +309,7 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
       itemBuilder: (context, index) {
         final album = _albums[index];
         final date = album['date'] as String;
-        final coverUrl = album['cover_image_url'] as String? ?? '';
+        final coverUrl = Config.resolveImageUrl(album['cover_image_url'] as String? ?? '');
         final emotion = album['cover_emotion'] as String? ?? 'Unknown';
         final count = album['photo_count'] as int? ?? 0;
         final isSelected = _selectedKeys.contains(date);
@@ -326,7 +326,9 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(8.r),
                 child: coverUrl.isNotEmpty
-                    ? Image.network(coverUrl, fit: BoxFit.cover,
+                    ? Image(
+                        image: NetworkImage(coverUrl, headers: Config.imageHeaders),
+                        fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => _placeholder())
                     : _placeholder(),
               ),
@@ -410,7 +412,7 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
       itemBuilder: (context, index) {
         final photo = photos[index];
         final timeKey = photo['time_key'] as String? ?? '';
-        final imageUrl = photo['image_url'] as String? ?? '';
+        final imageUrl = Config.resolveImageUrl(photo['image_url'] as String? ?? '');
         final emotion = photo['emotion'] as String? ?? 'Unknown';
         final timestamp = photo['timestamp'] as String? ?? '';
         final timeDisplay = timestamp.length >= 16 ? timestamp.substring(11, 16) : timeKey;
@@ -426,7 +428,9 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
             children: [
               // 사진
               imageUrl.isNotEmpty
-                  ? Image.network(imageUrl, fit: BoxFit.cover,
+                  ? Image(
+                      image: NetworkImage(imageUrl, headers: Config.imageHeaders),
+                      fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => _placeholder())
                   : _placeholder(),
               // 선택 오버레이
@@ -536,14 +540,14 @@ class _PhotoViewerDialogState extends State<_PhotoViewerDialog> {
               itemCount: total,
               onPageChanged: (i) => setState(() => _currentIndex = i),
               itemBuilder: (_, i) {
-                final url = widget.photos[i]['image_url'] as String? ?? '';
+                final url = Config.resolveImageUrl(widget.photos[i]['image_url'] as String? ?? '');
                 return InteractiveViewer(
                   minScale: 1.0,
                   maxScale: 4.0,
                   child: Center(
                     child: url.isNotEmpty
-                        ? Image.network(
-                            url,
+                        ? Image(
+                            image: NetworkImage(url, headers: Config.imageHeaders),
                             fit: BoxFit.contain,
                             errorBuilder: (_, __, ___) => const Icon(
                               Icons.image_not_supported,

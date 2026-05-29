@@ -118,8 +118,8 @@ class _DiaryListPageState extends State<DiaryListPage> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: fullData['image_url'] != null && fullData['image_url'] != ''
-                  ? Image.network(
-                      fullData['image_url'],
+                  ? Image(
+                      image: NetworkImage(Config.resolveImageUrl(fullData['image_url']), headers: Config.imageHeaders),
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) =>
                           const Icon(Icons.pets, color: Colors.grey),

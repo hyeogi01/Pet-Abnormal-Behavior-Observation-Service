@@ -72,10 +72,8 @@ class _ExaminationHistoryPageState extends State<ExaminationHistoryPage> {
                 String prob = result['probability'] != null ? '${double.parse(result['probability'].toString()).toStringAsFixed(1)}%' : '';
                 String imageUrl = item['image_url'] ?? '';
 
-                // Replace minio internal host if necessary
-                if (imageUrl.contains('minio:9000')) {
-                  imageUrl = imageUrl.replaceAll('minio:9000', Config.apiBaseUrl.replaceAll('https://', '').replaceAll('http://', '').split('/')[0]);
-                }
+                // Replace minio/localhost internal host if necessary
+                imageUrl = Config.resolveImageUrl(imageUrl);
 
                 return Card(
                   margin: const EdgeInsets.only(bottom: 16),
@@ -90,12 +88,12 @@ class _ExaminationHistoryPageState extends State<ExaminationHistoryPage> {
                         if (imageUrl.isNotEmpty)
                           ClipRRect(
                             borderRadius: BorderRadius.circular(12),
-                            child: Image.network(
-                              imageUrl,
+                            child: Image(
+                              image: NetworkImage(imageUrl, headers: Config.imageHeaders),
                               width: 80,
                               height: 80,
                               fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) => 
+                              errorBuilder: (context, error, stackTrace) =>
                                 Container(
                                   width: 80, height: 80, color: Colors.grey[200],
                                   child: Icon(isEye ? Icons.visibility : Icons.healing, color: Colors.grey[400]),

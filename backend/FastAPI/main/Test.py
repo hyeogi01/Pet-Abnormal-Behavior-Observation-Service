@@ -12,7 +12,7 @@ import tempfile
 # AI Inference module import
 from FastAPI.main.model_inference import ai_engine
 # Minio DB Imports
-from FastAPI.main.db import get_minio_client, DAILY_BEHAVIOR_BUCKET
+from FastAPI.main.db import get_minio_client, DAILY_BEHAVIOR_BUCKET, MINIO_PUBLIC_URL
 from FastAPI.main.daily_behavior_inference import daily_behavior_engine
 
 # LLM Diary & Statistics Imports
@@ -234,7 +234,7 @@ async def analyze_disease(
             length=len(contents),
             content_type="image/jpeg"
         )
-        image_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
+        image_url = f"{MINIO_PUBLIC_URL}/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
         
         if isinstance(result, dict) and result.get("status") == "success":
             result["image_url"] = image_url
@@ -327,20 +327,21 @@ def analyze_daily_behavior(
             else:
                 image_bytes = b""
 
-        # 3. Upload image to MinIO
+        # 3. Upload image to MinIO (only if frame extraction succeeded)
         minio_client = get_minio_client()
-        object_name = f"{user_id}/{uuid.uuid4()}.jpg"
-        
-        minio_client.put_object(
-            DAILY_BEHAVIOR_BUCKET,
-            object_name,
-            io.BytesIO(image_bytes),
-            length=len(image_bytes),
-            content_type="image/jpeg"
-        )
-        
-        image_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
-        
+        if image_bytes:
+            object_name = f"{user_id}/{uuid.uuid4()}.jpg"
+            minio_client.put_object(
+                DAILY_BEHAVIOR_BUCKET,
+                object_name,
+                io.BytesIO(image_bytes),
+                length=len(image_bytes),
+                content_type="image/jpeg"
+            )
+            image_url = f"{MINIO_PUBLIC_URL}/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
+        else:
+            image_url = ""
+
         # Determine timestamp
         if timestamp:
             try:
@@ -450,16 +451,19 @@ async def simulate_full_day(
             else:
                 thumb_image_bytes = b""
 
-            # 3. MinIO Upload (Thumbnail image)
-            object_name = f"{user_id}/sim_{uuid.uuid4()}.jpg"
-            minio_client.put_object(
-                DAILY_BEHAVIOR_BUCKET,
-                object_name,
-                io.BytesIO(thumb_image_bytes),
-                length=len(thumb_image_bytes),
-                content_type="image/jpeg"
-            )
-            image_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
+            # 3. MinIO Upload (Thumbnail image, only if frame extraction succeeded)
+            if thumb_image_bytes:
+                object_name = f"{user_id}/sim_{uuid.uuid4()}.jpg"
+                minio_client.put_object(
+                    DAILY_BEHAVIOR_BUCKET,
+                    object_name,
+                    io.BytesIO(thumb_image_bytes),
+                    length=len(thumb_image_bytes),
+                    content_type="image/jpeg"
+                )
+                image_url = f"{MINIO_PUBLIC_URL}/{DAILY_BEHAVIOR_BUCKET}/{object_name}"
+            else:
+                image_url = ""
             
             # 3-1. Extract Audio to MP3
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio_file:
@@ -480,7 +484,7 @@ async def simulate_full_day(
                         length=len(audio_bytes),
                         content_type="audio/mpeg"
                     )
-                    audio_url = f"http://localhost:9000/{DAILY_BEHAVIOR_BUCKET}/{audio_object_name}"
+                    audio_url = f"{MINIO_PUBLIC_URL}/{DAILY_BEHAVIOR_BUCKET}/{audio_object_name}"
                 else:
                     audio_url = ""
             except Exception as ae:
@@ -544,6 +548,33 @@ async def get_daily_diary(user_id: str, date: str = None):
         }
     except Exception as e:
         return {"status": "error", "message": f"Diary generation error: {str(e)}"}
+
+@app.get("/api/diary-debug/{user_id}")
+async def get_diary_debug(user_id: str, date: str = None):
+    """
+    LLM 호출 없이 요약 카드와 플래그만 반환 — 프롬프트 데이터 검증용.
+    date format: YYYY-MM-DD
+    """
+    from FastAPI.main.llm_diary import get_daily_logs_for_diary, _build_summary_card
+    try:
+        logs = get_daily_logs_for_diary(user_id, date)
+        if not logs:
+            return {"status": "error", "message": "해당 날짜의 로그가 없습니다.", "log_count": 0}
+
+        summary_card, has_negative_sound, has_negative_behavior, has_patella, dominant_positive = _build_summary_card(logs)
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "date": date,
+            "log_count": len(logs),
+            "summary_card": summary_card,
+            "has_negative_sound": has_negative_sound,
+            "has_negative_behavior": has_negative_behavior,
+            "has_patella": has_patella,
+            "dominant_positive": dominant_positive,
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @app.get("/api/statistics/{user_id}")
 async def get_pet_statistics(user_id: str, pet_type: str):
@@ -786,7 +817,8 @@ def get_video_gallery(user_id: str):
                             display_time = timestamp_str
 
                     url = doc.get("video_url") or doc.get("image_url", "")
-                    url = url.replace("minio:9000", "localhost:9000")
+                    url = url.replace("http://localhost:9000", MINIO_PUBLIC_URL)
+                    url = url.replace("http://minio:9000", MINIO_PUBLIC_URL)
                     
                     gallery_items.append({
                         "timestamp": display_time,
@@ -847,7 +879,8 @@ def get_album_list(user_id: str):
                     emotion = "Unknown"
 
                 image_url = doc.get("image_url") or doc.get("video_url", "")
-                image_url = image_url.replace("minio:9000", "localhost:9000")
+                image_url = image_url.replace("http://localhost:9000", MINIO_PUBLIC_URL)
+                image_url = image_url.replace("http://minio:9000", MINIO_PUBLIC_URL)
                 timestamp_str = doc.get("timestamp", "")
                 display_time = "Unknown"
                 if timestamp_str:
@@ -999,7 +1032,7 @@ async def upload_profile_image(user_id: str, is_cover: str = Form("false"), file
             length=len(contents),
             content_type=file.content_type or "image/jpeg"
         )
-        image_url = f"http://localhost:9000/user-profiles/{object_name}"
+        image_url = f"{MINIO_PUBLIC_URL}/user-profiles/{object_name}"
         
         ref = firebase_db.reference(f'users/{user_id}/pet_info')
         if is_cover.lower() == 'true':

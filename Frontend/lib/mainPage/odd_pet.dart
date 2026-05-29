@@ -100,7 +100,7 @@ class _PageBState extends State<PageB> {
             if (latestAbnormalData != null) {
               setState(() {
                 _lastDetectionTime = latestAbnormalTimeKey.toString().length >= 5 ? latestAbnormalTimeKey.toString().substring(0, 5) : latestAbnormalTimeKey.toString();
-                _detectionImageUrl = latestAbnormalData!['image_url'];
+                _detectionImageUrl = Config.resolveImageUrl(latestAbnormalData!['image_url']);
                 _aiConfidence = latestAbnormalConfidence ?? 0.85;
                 _patellarHealthScore = 100 - (maxSeverity * 20); // 가장 심각한 등급으로 점수 산정
                 _abnormalCount = abnormalCount;
@@ -393,8 +393,8 @@ class _PageBState extends State<PageB> {
             const SizedBox(height: 12),
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                imageUrl,
+              child: Image(
+                image: NetworkImage(imageUrl, headers: Config.imageHeaders),
                 height: 200,
                 width: double.infinity,
                 fit: BoxFit.cover,

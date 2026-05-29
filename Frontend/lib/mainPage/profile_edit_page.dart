@@ -31,7 +31,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.currentName);
-    _currentImageUrl = widget.currentImageUrl;
+    _currentImageUrl = Config.resolveImageUrl(widget.currentImageUrl);
   }
 
   @override
@@ -73,7 +73,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
         if (response.statusCode == 200) {
           var data = jsonDecode(response.body);
           if (data['status'] == 'success') {
-            newImageUrl = data['image_url'];
+            newImageUrl = Config.resolveImageUrl(data['image_url']);
           }
         }
       } catch (e) {
@@ -146,7 +146,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                       backgroundImage: _selectedImageBytes != null
                           ? MemoryImage(_selectedImageBytes!) as ImageProvider
                           : (_currentImageUrl != null && _currentImageUrl!.isNotEmpty
-                              ? NetworkImage(_currentImageUrl!)
+                              ? NetworkImage(_currentImageUrl!, headers: Config.imageHeaders)
                               : null),
                       child: (_selectedImageBytes == null && (_currentImageUrl == null || _currentImageUrl!.isEmpty))
                           ? const Icon(Icons.pets, size: 50, color: Colors.white)

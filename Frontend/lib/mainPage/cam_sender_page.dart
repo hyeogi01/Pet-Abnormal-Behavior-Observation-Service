@@ -1,7 +1,12 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
-import 'package:pet_diary/services/webrtc_service.dart';
+import 'package:http/http.dart' as http;
 import 'package:pet_diary/config.dart';
+import 'package:pet_diary/services/pet_detector.dart';
+import 'package:pet_diary/services/webrtc_service.dart';
 
 /// 공기계(송출 기기)에서 실제로 영상을 송출하는 화면
 class CamSenderPage extends StatefulWidget {
@@ -24,10 +29,22 @@ class _CamSenderPageState extends State<CamSenderPage> {
   bool _isStreaming = false;
   WebRTCService? _webrtcService;
 
+  // 온디바이스 YOLO 감지 + 주기적 캡처
+  final PetDetector _petDetector = PetDetector();
+  int _recordingIntervalMinutes = 1;
+  String _petType = 'dog';
+  bool _isInDetectionLoop = false;
+  bool _isCapturing = false;
+  Timer? _normalTimer;
+  Timer? _retryTimer;
+  static const int _retryIntervalMinutes = 1;
+
   @override
   void initState() {
     super.initState();
     _initRenderer();
+    _petDetector.load();
+    _loadUserSettings();
   }
 
   Future<void> _initRenderer() async {
@@ -87,8 +104,133 @@ class _CamSenderPageState extends State<CamSenderPage> {
     }
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // 설정 로드 + 타이머 시작
+  // ──────────────────────────────────────────────────────────────
+
+  Future<void> _loadUserSettings() async {
+    try {
+      final sRes = await http.get(
+        Uri.parse('${Config.apiBaseUrl}/api/settings/${widget.userId}'),
+        headers: Config.ngrokHeaders,
+      );
+      if (sRes.statusCode == 200) {
+        final d = jsonDecode(sRes.body);
+        if (d['status'] == 'success' && d['settings'] != null) {
+          _recordingIntervalMinutes = d['settings']['recording_interval'] ?? 60;
+        }
+      }
+      final pRes = await http.get(
+        Uri.parse('${Config.apiBaseUrl}/user-pet-info/${widget.userId}'),
+        headers: Config.ngrokHeaders,
+      );
+      if (pRes.statusCode == 200) {
+        final d = jsonDecode(pRes.body);
+        if (d['status'] == 'success' && d['data'] != null) {
+          _petType = d['data']['pet_type'] ?? 'dog';
+        }
+      }
+    } catch (e) {
+      debugPrint('[CamSender] Settings load error: $e');
+    } finally {
+      _startNormalTimer();
+    }
+  }
+
+  void _startNormalTimer() {
+    _normalTimer?.cancel();
+    _normalTimer = Timer.periodic(
+      Duration(minutes: _recordingIntervalMinutes),
+      (_) {
+        // 이미 감지 루프 중이면 SKIP (루프가 완료되면 다음 주기에 재시작)
+        if (!_isInDetectionLoop) _startDetectionLoop();
+      },
+    );
+    debugPrint('[CamSender] Normal timer started: every $_recordingIntervalMinutes min');
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // 감지 루프 (pet이 감지될 때까지 2분 간격으로 재시도)
+  // ──────────────────────────────────────────────────────────────
+
+  void _startDetectionLoop() {
+    _isInDetectionLoop = true;
+    _tryDetectAndCapture();
+  }
+
+  Future<void> _tryDetectAndCapture() async {
+    if (_isCapturing || _localStream == null) {
+      _scheduleRetry();
+      return;
+    }
+    _isCapturing = true;
+
+    try {
+      // 1. WebRTC 스트림에서 프레임 캡처
+      final tracks = _localStream!.getVideoTracks();
+      if (tracks.isEmpty) {
+        _scheduleRetry();
+        return;
+      }
+      final ByteBuffer buf = await tracks.first.captureFrame();
+      final Uint8List frameBytes = buf.asUint8List();
+
+      // 2. 온디바이스 YOLO 추론
+      final petFound = await _petDetector.detect(frameBytes);
+      if (!petFound) {
+        debugPrint('[CamSender] No pet → retry in $_retryIntervalMinutes min');
+        _scheduleRetry();
+        return;
+      }
+
+      // 3. 반려동물 감지됨 → 서버로 전송 (SigLIP 전체 분석)
+      final req = http.MultipartRequest(
+        'POST',
+        Uri.parse('${Config.apiBaseUrl}/api/daily-behavior'),
+      );
+      req.headers.addAll(Config.ngrokFormHeaders);
+      req.fields['user_id'] = widget.userId;
+      req.fields['pet_type'] = _petType;
+      req.fields['timestamp'] = DateTime.now().toIso8601String();
+      req.files.add(http.MultipartFile.fromBytes(
+        'file',
+        frameBytes,
+        filename: 'capture_${DateTime.now().millisecondsSinceEpoch}.png',
+      ));
+
+      final res = await http.Response.fromStream(await req.send());
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        debugPrint('[CamSender] Analysis result: ${data['status']}');
+      }
+
+      // 성공/실패 무관하게 감지 루프 종료 → IDLE 복귀
+      _isInDetectionLoop = false;
+      _retryTimer?.cancel();
+
+    } catch (e) {
+      debugPrint('[CamSender] Capture/analyze error: $e');
+      _scheduleRetry();
+    } finally {
+      _isCapturing = false;
+    }
+  }
+
+  void _scheduleRetry() {
+    _retryTimer?.cancel();
+    _retryTimer = Timer(
+      const Duration(minutes: _retryIntervalMinutes),
+      _tryDetectAndCapture,
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────────
+
   @override
   void dispose() {
+    _normalTimer?.cancel();
+    _retryTimer?.cancel();
+    _petDetector.dispose();
     _webrtcService?.dispose();
     _localStream?.dispose();
     _localRenderer.dispose();
@@ -99,7 +241,8 @@ class _CamSenderPageState extends State<CamSenderPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
+      body: SizedBox.expand(
+        child: Stack(
         children: [
           // 영상 렌더러
           Positioned.fill(
@@ -197,6 +340,7 @@ class _CamSenderPageState extends State<CamSenderPage> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

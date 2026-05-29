@@ -133,6 +133,10 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
     setState(() {
       _selectedIndex = index;
     });
+    // 마이페이지 탭 진입 시 프로필 이미지 등 최신 petData 반영
+    if (index == 4) {
+      _fetchPetInfo();
+    }
   }
 
   @override
@@ -257,7 +261,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
                             90,
                             false,
                             diaryItem['pet_diary'] ?? '내용 없음',
-                            imageUrl: diaryItem['image_url'],
+                            imageUrl: Config.resolveImageUrl(diaryItem['image_url']),
                           ),
                         );
                       }).toList(),
@@ -373,7 +377,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: imageUrl != null && imageUrl.isNotEmpty
-                  ? Image.network(imageUrl, fit: BoxFit.cover, errorBuilder: (ctx, err, st) => const Icon(Icons.menu_book, color: Colors.white))
+                  ? Image(image: NetworkImage(imageUrl, headers: Config.imageHeaders), fit: BoxFit.cover, errorBuilder: (ctx, err, st) => const Icon(Icons.menu_book, color: Colors.white))
                   : const Icon(Icons.menu_book, color: Colors.white),
             ),
           ),

@@ -77,6 +77,7 @@ class _OnboardingPage5State extends State<OnboardingPage5> {
       }
     } catch (e) {
       if (!mounted) return;
+      debugPrint('[Auth] Error: ${e.runtimeType} - $e');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("서버 연결 실패: 백엔드가 켜져있는지 확인해주세요.")),
       );
