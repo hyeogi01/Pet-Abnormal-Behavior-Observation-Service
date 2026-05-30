@@ -464,7 +464,7 @@ class _MyPageState extends State<MyPage> {
   }
 
   void _showRecordingIntervalPicker() {
-    final List<int> intervals = [20, 30, 40, 50, 60];
+    final List<int> intervals = [1, 20, 30, 40, 50, 60];
     int tempSelected = _recordingInterval;
     int initialIndex = intervals.indexOf(_recordingInterval);
     if (initialIndex < 0) initialIndex = intervals.length - 1; // 기본 60분

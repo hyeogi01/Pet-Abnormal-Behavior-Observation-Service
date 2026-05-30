@@ -147,7 +147,6 @@ class _CamSenderPageState extends State<CamSenderPage> {
     _normalTimer = Timer.periodic(
       Duration(minutes: _recordingIntervalMinutes),
       (_) {
-        // 이미 감지 루프 중이면 SKIP (루프가 완료되면 다음 주기에 재시작)
         if (!_isInDetectionLoop) _startDetectionLoop();
       },
     );
@@ -211,7 +210,7 @@ class _CamSenderPageState extends State<CamSenderPage> {
       await clipFile.delete();
       tempFilePath = null;
 
-      // 5. 서버로 전송 (백엔드가 .mp4 → analyze_clip 자동 분기)
+      // 5. 서버로 전송 (PNG → 시각 분석, MP4 → 오디오 분석)
       final req = http.MultipartRequest(
         'POST',
         Uri.parse('${Config.apiBaseUrl}/api/daily-behavior'),
@@ -222,6 +221,11 @@ class _CamSenderPageState extends State<CamSenderPage> {
       req.fields['timestamp'] = DateTime.now().toIso8601String();
       req.files.add(http.MultipartFile.fromBytes(
         'file',
+        frameBytes,
+        filename: 'frame_${DateTime.now().millisecondsSinceEpoch}.png',
+      ));
+      req.files.add(http.MultipartFile.fromBytes(
+        'audio_clip',
         clipBytes,
         filename: 'clip_${DateTime.now().millisecondsSinceEpoch}.mp4',
       ));

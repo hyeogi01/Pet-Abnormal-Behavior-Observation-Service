@@ -312,6 +312,59 @@ class DailyBehaviorEngine:
             print(f"[AI ENGINE] Error in analyze_image: {e}")
             return {"status": "error", "message": f"Image behavior inference failed: {str(e)}"}
 
+    def analyze_hybrid(self, image_data: bytes, audio_data: bytes, pet_type: str = "dog") -> dict:
+        """PNG(시각) + MP4 오디오(소리) 분리 분석."""
+        self._wait_for_load()
+        if not self.is_loaded:
+            return {"status": "error", "message": "Behavior models are not loaded yet."}
+
+        pt_label = self._normalize_pet_type(pet_type)
+        print(f"[AI ENGINE] Hybrid analysis for pet_type: {pt_label}")
+
+        try:
+            img_pil = Image.open(io.BytesIO(image_data)).convert("RGB")
+            features = self._siglip_features([img_pil])
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+                tmp.write(audio_data)
+                temp_path = tmp.name
+            audio_tensor = self.extract_audio_tensor(temp_path)
+            os.remove(temp_path)
+
+            if pt_label == "dog":
+                beh, b_conf = self._infer_image_task(features, "dog", "behavior", self.dog_behavior_classes)
+                emo, e_conf = self._infer_image_task(features, "dog", "emotion",  self.dog_emotion_classes)
+                snd, s_conf = self._infer_audio_task(audio_tensor, "dog", self.dog_sound_classes)
+                pat, p_conf = self._infer_patella_task(features, self.dog_patella_classes)
+                res_dict = {
+                    "status": "success",
+                    "pet_type_analyzed": "dog",
+                    "behavior_analysis": {"detected_behavior": beh, "confidence": b_conf,
+                                          "emotion": emo, "emotion_confidence": e_conf},
+                    "audio_analysis":    {"detected_sound": snd, "confidence": s_conf},
+                    "patella_analysis":  {"status": pat, "confidence": p_conf},
+                    "summary": f"[DOG] {beh} with {snd}",
+                }
+            else:
+                beh, b_conf = self._infer_image_task(features, "cat", "behavior", self.cat_behavior_classes)
+                emo, e_conf = self._infer_image_task(features, "cat", "emotion",  self.cat_emotion_classes)
+                snd, s_conf = self._infer_audio_task(audio_tensor, "cat", self.cat_sound_classes)
+                res_dict = {
+                    "status": "success",
+                    "pet_type_analyzed": "cat",
+                    "behavior_analysis": {"detected_behavior": beh, "confidence": b_conf,
+                                          "emotion": emo, "emotion_confidence": e_conf},
+                    "audio_analysis":    {"detected_sound": snd, "confidence": s_conf},
+                    "summary": f"[CAT] {beh} with {snd}",
+                }
+
+            return sanitize_data(res_dict)
+
+        except Exception as e:
+            print(f"[AI ENGINE] Error in analyze_hybrid: {e}")
+            import traceback; traceback.print_exc()
+            return {"status": "error", "message": f"Hybrid inference failed: {str(e)}"}
+
     def analyze_clip(self, video_bytes: bytes, pet_type: str = "dog") -> dict:
         self._wait_for_load()
         if not self.is_loaded:

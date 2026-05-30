@@ -1,5 +1,5 @@
 from fastapi import FastAPI, File, UploadFile, Form
-from typing import List
+from typing import List, Optional
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 import firebase_admin
@@ -319,6 +319,7 @@ def analyze_daily_behavior(
     user_id: str = Form(...),
     pet_type: str = Form(...),
     file: UploadFile = File(...),
+    audio_clip: Optional[UploadFile] = File(None),
     timestamp: str = Form(None)
 ):
     import tempfile
@@ -329,10 +330,17 @@ def analyze_daily_behavior(
         contents = file.file.read()
         filename = file.filename.lower()
         is_image = filename.endswith(('.jpg', '.jpeg', '.png'))
-        
+
         print(f"Received file: {filename}, len={len(contents)} timestamp={timestamp}", flush=True)
-        
-        if is_image:
+
+        if audio_clip is not None:
+            # Hybrid: PNG(시각) + MP4(오디오) 분리 전송
+            print("Starting hybrid AI inference (image + audio)...", flush=True)
+            audio_contents = audio_clip.file.read()
+            ai_result = daily_behavior_engine.analyze_hybrid(contents, audio_contents, pet_type)
+            image_bytes = contents
+            print("Completed hybrid AI inference.", flush=True)
+        elif is_image:
             # 1. Image Inference
             print("Starting image AI inference...", flush=True)
             ai_result = daily_behavior_engine.analyze_image(contents, pet_type)
@@ -354,7 +362,7 @@ def analyze_daily_behavior(
             ret, frame = cap.read()
             cap.release()
             os.remove(temp_video_path)
-            
+
             if ret:
                 _, buffer = cv2.imencode('.jpg', frame)
                 image_bytes = buffer.tobytes()
@@ -1213,8 +1221,8 @@ def save_fcm_token(user_id: str, data: dict):
 @app.post("/api/settings/{user_id}")
 def save_user_settings(user_id: str, data: UserSettings):
     try:
-        if data.recording_interval not in [20, 30, 40, 50, 60]:
-            return {"status": "error", "message": "촬영 주기는 20, 30, 40, 50, 60분만 설정 가능합니다."}
+        if data.recording_interval not in [1, 20, 30, 40, 50, 60]:
+            return {"status": "error", "message": "촬영 주기는 1, 20, 30, 40, 50, 60분만 설정 가능합니다."}
         if data.diary_cover_type not in ["happy", "frequent"]:
             return {"status": "error", "message": "대표 사진 설정은 'happy' 또는 'frequent'만 가능합니다."}
         ref = firebase_db.reference(f'users/{user_id}/settings')
