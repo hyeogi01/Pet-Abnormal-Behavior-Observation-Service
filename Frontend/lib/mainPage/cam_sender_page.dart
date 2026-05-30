@@ -118,7 +118,7 @@ class _CamSenderPageState extends State<CamSenderPage> {
       final sRes = await http.get(
         Uri.parse('${Config.apiBaseUrl}/api/settings/${widget.userId}'),
         headers: Config.ngrokHeaders,
-      );
+      ).timeout(const Duration(seconds: 5));
       if (sRes.statusCode == 200) {
         final d = jsonDecode(sRes.body);
         if (d['status'] == 'success' && d['settings'] != null) {
@@ -128,7 +128,7 @@ class _CamSenderPageState extends State<CamSenderPage> {
       final pRes = await http.get(
         Uri.parse('${Config.apiBaseUrl}/user-pet-info/${widget.userId}'),
         headers: Config.ngrokHeaders,
-      );
+      ).timeout(const Duration(seconds: 5));
       if (pRes.statusCode == 200) {
         final d = jsonDecode(pRes.body);
         if (d['status'] == 'success' && d['data'] != null) {
