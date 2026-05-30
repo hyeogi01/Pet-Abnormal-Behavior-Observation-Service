@@ -3,7 +3,7 @@ from typing import List
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 import firebase_admin
-from firebase_admin import credentials, db as firebase_db, auth as firebase_auth
+from firebase_admin import credentials, db as firebase_db, auth as firebase_auth, messaging as fcm_messaging
 from fastapi.middleware.cors import CORSMiddleware
 import io
 import datetime
@@ -393,7 +393,13 @@ def analyze_daily_behavior(
             "image_url": image_url,
             "analysis_result": ai_result
         })
-        
+
+        # 5. Patella 이상 감지 시 FCM 알림
+        patella_info = ai_result.get('patella_analysis', {})
+        patella_status = patella_info.get('status', 'normal')
+        if patella_status not in ('normal', 'Unknown', None):
+            _send_patella_alert(user_id, patella_status, patella_info.get('confidence', 0.0))
+
         return {
             "status": "success",
             "message": "Daily analysis saved successfully",
@@ -1164,23 +1170,51 @@ def delete_account(data: DeleteAccountRequest):
 # ─────────────────────────── USER SETTINGS ───────────────────────────
 
 class UserSettings(BaseModel):
-    recording_interval: int = 60  # 20~60분, 10분 단위
-    diary_cover_type: str = "happy"  # "happy" 또는 "frequent"
+    recording_interval: int = 60
+    diary_cover_type: str = "happy"
+    push_notifications_enabled: bool = True
+
+def _send_patella_alert(user_id: str, patella_status: str, confidence: float):
+    try:
+        settings = firebase_db.reference(f'users/{user_id}/settings').get() or {}
+        if not settings.get('push_notifications_enabled', True):
+            return
+        fcm_token = firebase_db.reference(f'users/{user_id}/fcm_token').get()
+        if not fcm_token:
+            return
+        message = fcm_messaging.Message(
+            notification=fcm_messaging.Notification(
+                title='슬개골 이상 감지',
+                body=f'슬개골 {patella_status}등급이 감지되었습니다. (신뢰도 {int(confidence * 100)}%)',
+            ),
+            android=fcm_messaging.AndroidConfig(
+                notification=fcm_messaging.AndroidNotification(color='#FF6B35'),
+            ),
+            token=fcm_token,
+        )
+        fcm_messaging.send(message)
+        print(f'[FCM] Patella alert sent: user={user_id}, grade={patella_status}')
+    except Exception as e:
+        print(f'[FCM] Send error: {e}')
+
+@app.post("/api/fcm-token/{user_id}")
+def save_fcm_token(user_id: str, data: dict):
+    try:
+        token = data.get('token')
+        if not token:
+            return {"status": "error", "message": "token is required"}
+        firebase_db.reference(f'users/{user_id}/fcm_token').set(token)
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @app.post("/api/settings/{user_id}")
 def save_user_settings(user_id: str, data: UserSettings):
-    """
-    사용자 설정을 Firebase에 저장합니다.
-    - recording_interval: 촬영 주기 (20~60분, 10분 단위)
-    - diary_cover_type: 일기 대표 사진 기준 ("happy" 또는 "frequent")
-    """
     try:
-        # Validate recording_interval
         if data.recording_interval not in [20, 30, 40, 50, 60]:
             return {"status": "error", "message": "촬영 주기는 20, 30, 40, 50, 60분만 설정 가능합니다."}
         if data.diary_cover_type not in ["happy", "frequent"]:
             return {"status": "error", "message": "대표 사진 설정은 'happy' 또는 'frequent'만 가능합니다."}
-
         ref = firebase_db.reference(f'users/{user_id}/settings')
         ref.set(data.model_dump())
         return {"status": "success", "settings": data.model_dump()}
@@ -1189,16 +1223,13 @@ def save_user_settings(user_id: str, data: UserSettings):
 
 @app.get("/api/settings/{user_id}")
 def get_user_settings(user_id: str):
-    """
-    사용자 설정을 Firebase에서 조회합니다.
-    설정이 없을 경우 기본값(recording_interval=60, diary_cover_type='happy')을 반환합니다.
-    """
     try:
         ref = firebase_db.reference(f'users/{user_id}/settings')
         settings = ref.get()
         if not settings:
-            default_settings = {"recording_interval": 60, "diary_cover_type": "happy"}
+            default_settings = {"recording_interval": 60, "diary_cover_type": "happy", "push_notifications_enabled": True}
             return {"status": "success", "settings": default_settings}
+        settings.setdefault('push_notifications_enabled', True)
         return {"status": "success", "settings": settings}
     except Exception as e:
         return {"status": "error", "message": str(e)}
