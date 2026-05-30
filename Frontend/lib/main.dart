@@ -119,7 +119,7 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
       final notification = message.notification;
       if (notification == null) return;
       flutterLocalNotificationsPlugin.show(
-        notification.hashCode,
+        notification.hashCode.abs() % 100000,
         notification.title,
         notification.body,
         const NotificationDetails(
