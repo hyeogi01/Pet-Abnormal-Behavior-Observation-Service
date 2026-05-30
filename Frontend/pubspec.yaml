@@ -81,6 +81,7 @@ flutter:
     - assets/images/eye_bad.png
     - assets/images/skin_good.png
     - assets/images/skin_bad.png
+    - assets/images/pet_character.png
     - assets/models/
 
   # An image asset can refer to one or more resolution-specific "variants", see

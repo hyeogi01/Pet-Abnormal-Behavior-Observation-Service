@@ -1,13 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:pet_diary/pet_name_input_page.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:pet_diary/main.dart';
-import 'package:pet_diary/config.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:pet_diary/mainPage/cam_connect_page.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:pet_diary/discription/onboarding_page4.dart';
+import 'package:pet_diary/discription/login_bottom_sheet.dart';
 
 class OnboardingPage5 extends StatefulWidget {
   const OnboardingPage5({super.key});
@@ -16,414 +9,145 @@ class OnboardingPage5 extends StatefulWidget {
   State<OnboardingPage5> createState() => _OnboardingPage5State();
 }
 
-class _OnboardingPage5State extends State<OnboardingPage5> {
-  bool _isLoading = false;
+class _OnboardingPage5State extends State<OnboardingPage5>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _floatController;
+  late final Animation<double> _floatAnim;
 
-  Future<void> _handleGoogleSignIn() async {
-    try {
-      debugPrint('[Google] 1. GoogleSignIn 시작');
-      final _googleSignIn = GoogleSignIn();
-      await _googleSignIn.signOut();
-      final googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) {
-        debugPrint('[Google] 사용자가 취소함');
-        return;
-      }
-      debugPrint('[Google] 2. 계정 선택 완료: ${googleUser.email}');
-
-      final googleAuth = await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-      debugPrint('[Google] 3. credential 생성 완료');
-
-      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
-      final idToken = await userCredential.user!.getIdToken();
-      debugPrint('[Google] 4. Firebase idToken 발급 완료');
-      debugPrint('[Google] 5. 백엔드 URL: ${Config.apiBaseUrl}/auth/google/');
-
-      final response = await http.post(
-        Uri.parse('${Config.apiBaseUrl}/auth/google/'),
-        headers: {
-          ...Config.ngrokHeaders,
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({'id_token': idToken}),
-      ).timeout(const Duration(seconds: 10));
-
-      debugPrint('[Google] 6. 백엔드 응답: ${response.statusCode} ${response.body}');
-
-      final result = jsonDecode(response.body);
-
-      if (!mounted) return;
-
-      if (response.statusCode == 200 && result['status'] == 'success') {
-        Navigator.of(context).popUntil((route) => route.isFirst);
-        if (result['has_pet_info']) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => PetHealthDashboard(userId: result['user_id'])),
-          );
-        } else {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => PetNameInputPage(userId: result['user_id'])),
-          );
-        }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("구글 로그인 실패: ${result['message'] ?? '알 수 없는 오류'}")),
-        );
-      }
-    } catch (e) {
-      debugPrint('[Google] 오류 발생: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("구글 로그인 오류: $e")),
-      );
-    }
-  }
-
-  // 1. 서버와 통신하는 실제 로직 (로그인/회원가입만 신속히 처리)
-  Future<void> _handleAuth(BuildContext dialogContext, String id, String pw, bool isSignup) async {
-    if (id.isEmpty || pw.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("아이디와 비밀번호를 입력해주세요.")),
-      );
-      return;
-    }
-
-    final String endpoint = isSignup ? '/signup/' : '/login/';
-    final Uri url = Uri.parse('${Config.apiBaseUrl}$endpoint');
-
-    // 다이얼로그 내부 로딩 상태 활성화 (StatefulBuilder 내의 setState 사용을 위해 아래 다이얼로그 로직에서 처리)
-    
-    try {
-      final response = await http.post(
-        url,
-        headers: Config.ngrokHeaders,
-        body: jsonEncode({'user_id': id, 'password': pw}),
-      ).timeout(const Duration(seconds: 10));
-
-      final result = jsonDecode(response.body);
-      
-      if (response.statusCode == 200 && result['status'] == 'success') {
-        if (!mounted) return;
-        
-        // 커밋 전 모든 다이얼로그와 바텀시트 닫기
-        Navigator.of(context).popUntil((route) => route.isFirst || route.settings.name == '/');
-
-        if (isSignup) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => PetNameInputPage(userId: id)),
-          );
-        } else {
-          bool hasPet = result['has_pet_info'] ?? false;
-          if (hasPet) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => PetHealthDashboard(userId: result['user_id']),
-              ),
-            );
-          } else {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => PetNameInputPage(userId: id),
-              ),
-            );
-          }
-        }
-      } else {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("${isSignup ? '회원가입' : '로그인'} 실패: ${result['message'] ?? '알 수 없는 오류'}")),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      debugPrint('[Auth] Error: ${e.runtimeType} - $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("서버 연결 실패: 백엔드가 켜져있는지 확인해주세요.")),
-      );
-    }
-  }
-
-  void _showEmailAuthDialog(BuildContext context) {
-    final TextEditingController idController = TextEditingController();
-    final TextEditingController pwController = TextEditingController();
-    bool isDialogLoading = false;
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Text("이메일 로그인/가입", style: TextStyle(fontWeight: FontWeight.bold)),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (isDialogLoading)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
-                    child: CircularProgressIndicator(),
-                  )
-                else ...[
-                  TextField(controller: idController, decoration: const InputDecoration(hintText: "아이디")),
-                  const SizedBox(height: 10),
-                  TextField(controller: pwController, obscureText: true, decoration: const InputDecoration(hintText: "비밀번호")),
-                ],
-              ],
-            ),
-            actions: isDialogLoading 
-              ? [] 
-              : [
-                  TextButton(
-                    onPressed: () async {
-                      setDialogState(() => isDialogLoading = true);
-                      await _handleAuth(context, idController.text, pwController.text, false);
-                      if (mounted) setDialogState(() => isDialogLoading = false);
-                    },
-                    child: Text("로그인", style: TextStyle(color: Theme.of(context).primaryColor)),
-                  ),
-                  ElevatedButton(
-                    onPressed: () async {
-                      setDialogState(() => isDialogLoading = true);
-                      await _handleAuth(context, idController.text, pwController.text, true);
-                      if (mounted) setDialogState(() => isDialogLoading = false);
-                    },
-                    style: ElevatedButton.styleFrom(elevation: 0),
-                    child: const Text("회원가입", style: TextStyle(color: Colors.white)),
-                  ),
-                ],
-          );
-        }
-      ),
+  @override
+  void initState() {
+    super.initState();
+    _floatController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+    _floatAnim = Tween<double>(begin: 0, end: -12).animate(
+      CurvedAnimation(parent: _floatController, curve: Curves.easeInOut),
     );
   }
 
   @override
+  void dispose() {
+    _floatController.dispose();
+    super.dispose();
+  }
+
+  void _onSwipe(DragEndDetails details) {
+    if (details.primaryVelocity == null) return;
+    if (details.primaryVelocity! < -300) {
+      // 마지막 페이지에서 왼쪽 스와이프 → 로그인 바텀시트
+      showLoginBottomSheet(context);
+    } else if (details.primaryVelocity! > 300) {
+      Navigator.pushReplacement(
+          context, slideRoute(const OnboardingPage4(), fromRight: false));
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            children: [
-              const SizedBox(height: 40),
-              Container(
-                width: double.infinity,
-                height: MediaQuery.of(context).size.height * 0.45,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(30.r),
-                ),
-                child: Center(
-                  child: Icon(
-                      Icons.pets_rounded,
-                      size: 100,
-                      color: Theme.of(context).primaryColor.withOpacity(0.5)
+    return GestureDetector(
+      onHorizontalDragEnd: _onSwipe,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Column(
+              children: [
+                const SizedBox(height: 40),
+                SizedBox(
+                  width: double.infinity,
+                  height: MediaQuery.of(context).size.height * 0.45,
+                  child: Stack(
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        height: double.infinity,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF34D399).withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(28),
+                        ),
+                        clipBehavior: Clip.hardEdge,
+                        child: Image.asset(
+                          'assets/images/intro_settings.png',
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const Center(
+                            child: Icon(Icons.directions_walk_rounded, size: 100,
+                                color: Color(0x6634D399)),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        right: 12, bottom: 12,
+                        child: AnimatedBuilder(
+                          animation: _floatAnim,
+                          builder: (_, __) => Transform.translate(
+                            offset: Offset(0, _floatAnim.value),
+                            child: Image.asset(
+                              'assets/images/pet_character.png',
+                              width: 80, height: 80, fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 30),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(5, (index) => Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  width: index == 4 ? 40 : 30,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: index == 4 ? Theme.of(context).primaryColor : Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(3.r),
-                  ),
-                )),
-              ),
-              const SizedBox(height: 40),
-              const Text(
-                "마지막 페이지입니다.",
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                "우리 아이의 평소와 다른 움직임을\n실시간으로 분석하여 알려드려요.",
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 15,
-                  color: Colors.grey,
-                  height: 1.5,
-                ),
-              ),
-              const Spacer(),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: () {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (context) => _buildLoginSheet(context),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12.r),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(5, (i) => AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    width: i == 4 ? 28 : 8, height: 8,
+                    decoration: BoxDecoration(
+                      color: i == 4 ? const Color(0xFF34D399) : Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(4),
                     ),
-                    elevation: 0,
-                  ),
-                  child: const Text(
-                    "닫기",
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                  )),
+                ),
+                const SizedBox(height: 32),
+                const Text('산책 · 체중 관리',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold,
+                        color: Colors.black87),
+                    textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                Text('산책 기록과 체중 변화를 한눈에 확인하고\n건강을 꾸준히 챙겨요',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 15, color: Colors.grey.shade600,
+                        height: 1.6)),
+                const Spacer(),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => showLoginBottomSheet(context),
+                      child: Text('건너뛰기',
+                          style: TextStyle(color: Colors.grey.shade500)),
                     ),
-                  ),
+                    const Spacer(),
+                    SizedBox(
+                      width: 130, height: 48,
+                      child: ElevatedButton(
+                        onPressed: () => showLoginBottomSheet(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF34D399),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                          elevation: 0,
+                        ),
+                        child: const Text('시작하기',
+                            style: TextStyle(fontSize: 15,
+                                fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 20),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLoginSheet(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.50,
-      padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 20.h),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20.r)),
-      ),
-      child: Column(
-        children: [
-          Container(
-            width: 40.w,
-            height: 4.h,
-            margin: EdgeInsets.only(bottom: 24.h),
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(2.r),
+                const SizedBox(height: 20),
+              ],
             ),
           ),
-          const Text(
-            "로그인 및 시작하기",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          SizedBox(height: 20.h),
-          _buildSNSButton(
-            icon: Icons.chat_bubble,
-            label: "카카오로 시작하기",
-            color: const Color(0xFFFEE500),
-            textColor: Colors.black,
-            onTap: () {},
-          ),
-          SizedBox(height: 10.h),
-          _buildSNSButton(
-            icon: Icons.g_mobiledata,
-            label: "Google로 시작하기",
-            color: Colors.white,
-            textColor: Colors.black,
-            onTap: _handleGoogleSignIn,
-            isBorder: true,
-          ),
-          SizedBox(height: 10.h),
-          _buildSNSButton(
-            icon: Icons.email,
-            label: "이메일로 시작하기",
-            color: Colors.grey[200]!,
-            textColor: Colors.black,
-            onTap: () {
-              Navigator.pop(context);
-              _showEmailAuthDialog(context);
-            },
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const PetNameInputPage(userId: "guest_user"),
-                ),
-              );
-            },
-            child: Text(
-              "로그인 없이 둘러보기 (비회원)",
-              style: TextStyle(
-                color: Colors.grey[500],
-                decoration: TextDecoration.underline,
-                fontSize: 14,
-              ),
-            ),
-          ),
-          SizedBox(height: 8.h),
-          TextButton.icon(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const CamConnectPage(),
-                ),
-              );
-            },
-            icon: const Icon(Icons.videocam, color: Colors.orange, size: 20),
-            label: const Text(
-              "공기계를 CCTV로 사용하기",
-              style: TextStyle(
-                color: Colors.orange,
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSNSButton({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required Color textColor,
-    required VoidCallback onTap,
-    bool isBorder = false,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        height: 48.h,
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(12.r),
-          border: isBorder ? Border.all(color: Colors.grey.shade300) : null,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: textColor, size: 22),
-            SizedBox(width: 10.w),
-            Text(
-              label,
-              style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: 15),
-            ),
-          ],
         ),
       ),
     );

@@ -1,108 +1,154 @@
 import 'package:flutter/material.dart';
+import 'package:pet_diary/discription/onboarding_page2.dart';
 import 'package:pet_diary/discription/onboarding_page4.dart';
+import 'package:pet_diary/discription/login_bottom_sheet.dart';
 
-class OnboardingPage3 extends StatelessWidget {
+class OnboardingPage3 extends StatefulWidget {
   const OnboardingPage3({super.key});
 
   @override
+  State<OnboardingPage3> createState() => _OnboardingPage3State();
+}
+
+class _OnboardingPage3State extends State<OnboardingPage3>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _floatController;
+  late final Animation<double> _floatAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _floatController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+    _floatAnim = Tween<double>(begin: 0, end: -12).animate(
+      CurvedAnimation(parent: _floatController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _floatController.dispose();
+    super.dispose();
+  }
+
+  void _onSwipe(DragEndDetails details) {
+    if (details.primaryVelocity == null) return;
+    if (details.primaryVelocity! < -300) {
+      Navigator.pushReplacement(
+          context, slideRoute(const OnboardingPage4(), fromRight: true));
+    } else if (details.primaryVelocity! > 300) {
+      Navigator.pushReplacement(
+          context, slideRoute(const OnboardingPage2(), fromRight: false));
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: Column(
-            children: [
-              const SizedBox(height: 40),
-              // 1. 이미지 영역 (나중에 이미지를 바꿀 수 있는 박스)
-              Container(
-                width: double.infinity,
-                height: MediaQuery.of(context).size.height * 0.45,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Center(
-                  // 이 부분을 Image.asset('경로')로 바꾸시면 됩니다.
-                  child: Icon(
-                      Icons.pets_rounded,
-                      size: 100,
-                      color: Theme.of(context).primaryColor.withOpacity(0.5)
-                  ),
-                ),
-              ),
-              const SizedBox(height: 30),
-
-              // 2. 인디케이터 (현재 2번째 페이지 활성화)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(5, (index) => Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  width: index == 2 ? 40 : 30, // 2번째 바를 길게 표시
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: index == 2 ? Theme.of(context).primaryColor : Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                )),
-              ),
-              const SizedBox(height: 40),
-
-              // 3. 텍스트 영역
-              const Text(
-                "세 번째 화면입니다.",
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                "우리 아이의 평소와 다른 움직임을\n실시간으로 분석하여 알려드려요.",
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 15,
-                  color: Colors.grey.shade600,
-                  height: 1.5,
-                ),
-              ),
-
-              const Spacer(),
-
-              // 4. 하단 버튼
-              // 4. 하단 버튼
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: () {
-                    // 다음 페이지(기존 대시보드)로 이동 로직 추가
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => OnboardingPage4(),
+    return GestureDetector(
+      onHorizontalDragEnd: _onSwipe,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Column(
+              children: [
+                const SizedBox(height: 40),
+                SizedBox(
+                  width: double.infinity,
+                  height: MediaQuery.of(context).size.height * 0.45,
+                  child: Stack(
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        height: double.infinity,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF45B7D1).withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(28),
+                        ),
+                        clipBehavior: Clip.hardEdge,
+                        child: Image.asset(
+                          'assets/images/intro_examination.png',
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const Center(
+                            child: Icon(Icons.health_and_safety_rounded,
+                                size: 100, color: Color(0x6645B7D1)),
+                          ),
+                        ),
                       ),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: const Text(
-                    "다음으로",
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
+                      Positioned(
+                        right: 12, bottom: 12,
+                        child: AnimatedBuilder(
+                          animation: _floatAnim,
+                          builder: (_, __) => Transform.translate(
+                            offset: Offset(0, _floatAnim.value),
+                            child: Image.asset(
+                              'assets/images/pet_character.png',
+                              width: 80, height: 80, fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 20),
-            ],
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(5, (i) => AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    width: i == 2 ? 28 : 8, height: 8,
+                    decoration: BoxDecoration(
+                      color: i == 2 ? const Color(0xFF45B7D1) : Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  )),
+                ),
+                const SizedBox(height: 32),
+                const Text('AI 건강 검진',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold,
+                        color: Colors.black87),
+                    textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                Text('눈과 피부 사진을 올리면\nAI가 질환 가능성을 분석해줘요',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 15, color: Colors.grey.shade600,
+                        height: 1.6)),
+                const Spacer(),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => showLoginBottomSheet(context),
+                      child: Text('건너뛰기',
+                          style: TextStyle(color: Colors.grey.shade500)),
+                    ),
+                    const Spacer(),
+                    SizedBox(
+                      width: 130, height: 48,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pushReplacement(context,
+                            slideRoute(const OnboardingPage4(), fromRight: true)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF45B7D1),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                          elevation: 0,
+                        ),
+                        child: const Text('다음  →',
+                            style: TextStyle(fontSize: 15,
+                                fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
           ),
         ),
       ),
