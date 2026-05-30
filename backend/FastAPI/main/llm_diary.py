@@ -390,37 +390,61 @@ def get_diary_list(user_id: str, limit: int = 0) -> list:
     day_ref = firebase_db.reference(f'users/{user_id}/day')
     all_days_logs = day_ref.get() or {}
 
+    # 설정에서 사진 선택 기준 로드 (루프 밖에서 1회만)
+    settings = firebase_db.reference(f'users/{user_id}/settings').get() or {}
+    cover_type = settings.get('diary_cover_type', 'happy')
+    _HAPPY_EMOTIONS = {'dog_happy', 'dog_relaxed', 'cat_happy', 'cat_relaxed', 'cat_attentive'}
+
+    from collections import Counter
+
     diaries = []
     for date_key, diary_data in all_diary_entries.items():
         # Handle new structure (dict) and old structure (string/dict) compatibility
         pet_diary = ""
         report = ""
         memo = ""
-        
+
         if isinstance(diary_data, dict):
             pet_diary = diary_data.get("pet_diary") or diary_data.get("content", "")
             report = diary_data.get("report", "")
             memo = diary_data.get("memo", "")
         elif isinstance(diary_data, str):
             pet_diary = diary_data # legacy string
-        
-        # Find all available image_urls for this date
-        all_image_urls = []
+
+        # (url, emotion) 쌍으로 수집
+        photo_candidates = []
         day_logs = all_days_logs.get(date_key, {})
         if isinstance(day_logs, dict):
             for log in day_logs.values():
                 if isinstance(log, dict) and log.get("image_url"):
                     url = log["image_url"]
-                    # Normalize legacy internal URLs to the current public URL
                     url = url.replace("http://localhost:9000", MINIO_PUBLIC_URL)
                     url = url.replace("http://minio:9000", MINIO_PUBLIC_URL)
-                    all_image_urls.append(url)
+                    emotion = (
+                        log.get("analysis_result", {})
+                           .get("behavior_analysis", {})
+                           .get("emotion", "")
+                    )
+                    photo_candidates.append((url, emotion))
 
-        # Pick up to 4 random images
-        import random
-        selected_images = random.sample(all_image_urls, min(len(all_image_urls), 4)) if all_image_urls else []
-        
-        # Main thumbnail (first picked or placeholder)
+        # 설정에 따라 사진 순서 결정 후 최대 4장 선택
+        if cover_type == 'happy':
+            happy = [url for url, emo in photo_candidates if emo in _HAPPY_EMOTIONS]
+            others = [url for url, emo in photo_candidates if emo not in _HAPPY_EMOTIONS]
+            ordered_urls = happy + others
+        elif cover_type == 'frequent':
+            emotion_counts = Counter(emo for _, emo in photo_candidates if emo)
+            if emotion_counts:
+                top_emotion = emotion_counts.most_common(1)[0][0]
+                frequent = [url for url, emo in photo_candidates if emo == top_emotion]
+                others = [url for url, emo in photo_candidates if emo != top_emotion]
+                ordered_urls = frequent + others
+            else:
+                ordered_urls = [url for url, _ in photo_candidates]
+        else:
+            ordered_urls = [url for url, _ in photo_candidates]
+
+        selected_images = ordered_urls[:4]
         main_image = selected_images[0] if selected_images else ""
 
         diaries.append({

@@ -659,6 +659,8 @@ def get_daily_emotion_stats(user_id: str, date: str = None):
             "anxious": "불안",
             "sad": "우울",
             "angry": "화남",
+            "confused": "혼란",
+            "attentive": "집중",
             "bored": "심심",
             "sleepy": "졸림",
             "Unknown": "기타"
