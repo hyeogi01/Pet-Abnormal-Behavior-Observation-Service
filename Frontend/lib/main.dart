@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:pet_diary/mainPage/total_diary.dart';
 import 'package:pet_diary/mainPage/odd_pet.dart';
 import 'package:pet_diary/mainPage/daily_pet.dart';
@@ -17,9 +20,34 @@ import 'package:pet_diary/config.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:pet_diary/theme.dart';
 
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+    FlutterLocalNotificationsPlugin();
+
+const AndroidNotificationChannel petAlertChannel = AndroidNotificationChannel(
+  'pet_alerts',
+  '반려동물 이상 알림',
+  importance: Importance.high,
+);
+
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  if (!kIsWeb) {
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(petAlertChannel);
+    await flutterLocalNotificationsPlugin.initialize(
+      const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      ),
+    );
+  }
   await ScreenUtil.ensureScreenSize();
   runApp(
     ScreenUtilInit(
@@ -71,6 +99,39 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
   void initState() {
     super.initState();
     _refreshDashboard();
+    _initFCM();
+  }
+
+  Future<void> _initFCM() async {
+    await FirebaseMessaging.instance.requestPermission();
+    final token = await FirebaseMessaging.instance.getToken();
+    if (token == null) return;
+
+    try {
+      await http.post(
+        Uri.parse('${Config.apiBaseUrl}/api/fcm-token/${widget.userId}'),
+        headers: {...Config.ngrokHeaders, 'Content-Type': 'application/json'},
+        body: jsonEncode({'token': token}),
+      ).timeout(const Duration(seconds: 5));
+    } catch (_) {}
+
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      final notification = message.notification;
+      if (notification == null) return;
+      flutterLocalNotificationsPlugin.show(
+        notification.hashCode,
+        notification.title,
+        notification.body,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'pet_alerts',
+            '반려동물 이상 알림',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+        ),
+      );
+    });
   }
 
   Future<void> _refreshDashboard() async {

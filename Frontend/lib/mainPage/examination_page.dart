@@ -18,61 +18,54 @@ class ExaminationPage extends StatefulWidget {
 
 class _ExaminationPageState extends State<ExaminationPage> {
   final ImagePicker _picker = ImagePicker();
-  
-  // For selecting images
-  XFile? _eyeImage;
-  XFile? _skinImage;
-  
+
+  List<XFile> _eyeImages = [];
+  List<XFile> _skinImages = [];
+
   bool _isUploading = false;
 
-  Future<void> _pickAndUploadImage(String diseaseType) async {
-    final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery);
-    if (pickedFile == null) return;
-
+  Future<void> _pickImages(String diseaseType) async {
+    final picked = await _picker.pickMultiImage(limit: 5);
+    if (picked.isEmpty) return;
     setState(() {
-      if (diseaseType == 'eye') _eyeImage = pickedFile;
-      if (diseaseType == 'skin') _skinImage = pickedFile;
-      _isUploading = true;
+      if (diseaseType == 'eye') _eyeImages = picked;
+      else _skinImages = picked;
     });
+  }
 
-    // 펫 타입 가져오기 (기본값 설정)
+  Future<void> _uploadAndAnalyze(String diseaseType, List<XFile> images) async {
+    if (images.isEmpty) return;
+    setState(() => _isUploading = true);
+
     String petType = widget.petData?['pet_type'] ?? 'unknown';
 
-    // 백엔드 API 주소 (Docker 환경에서 로컬 접속)
     var uri = Uri.parse('${Config.apiBaseUrl}/api/analyze-disease');
     var request = http.MultipartRequest('POST', uri);
     request.headers.addAll(Config.ngrokHeaders);
 
-    // AI 모델에게 함께 보낼 메타데이터: 펫 종류와 질환 종류 (안구/피부)
     request.fields['pet_type'] = petType;
-    request.fields['disease_type'] = diseaseType; // 'eye' 또는 'skin'
+    request.fields['disease_type'] = diseaseType;
     request.fields['user_id'] = widget.userId ?? 'unknown_user';
 
-    // 웹 환경과 모바일(앱/데스크탑) 환경 호환을 위한 분기 처리
-    if (kIsWeb) {
+    for (final img in images) {
       request.files.add(http.MultipartFile.fromBytes(
-        'file', 
-        await pickedFile.readAsBytes(),
-        filename: pickedFile.name,
+        'files',
+        await img.readAsBytes(),
+        filename: img.name,
       ));
-    } else {
-      request.files.add(await http.MultipartFile.fromPath('file', pickedFile.path));
     }
 
     try {
-      // 서버 전송 실행
       var streamedResponse = await request.send();
       var response = await http.Response.fromStream(streamedResponse);
-      
+
       if (!mounted) return;
-      
+
       if (response.statusCode == 200) {
-        // UTF-8로 디코딩
         final decodedBody = utf8.decode(response.bodyBytes);
         final Map<String, dynamic> result = json.decode(decodedBody);
-        
+
         if (result['status'] == 'success') {
-          // 바텀시트로 결과 표시
           showModalBottomSheet(
             context: context,
             isScrollControlled: true,
@@ -81,6 +74,7 @@ class _ExaminationPageState extends State<ExaminationPage> {
               String category = result['disease_category'].toString().contains('eye') ? '안구 질환' : '피부 질환';
               String diagnosis = result['diagnosis'] ?? '진단 결과 없음';
               double probability = result['probability'] != null ? double.parse(result['probability'].toString()) : 0.0;
+              int imagesAnalyzed = result['images_analyzed'] ?? images.length;
               bool isNormal = diagnosis.contains('정상');
               Color statusColor = isNormal ? Colors.green : Colors.orange;
               IconData statusIcon = isNormal ? Icons.check_circle : Icons.warning_rounded;
@@ -103,7 +97,12 @@ class _ExaminationPageState extends State<ExaminationPage> {
                         Text('AI $category 분석 완료', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                       ],
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 8),
+                    Text(
+                      '사진 $imagesAnalyzed장 분석 결과',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    ),
+                    const SizedBox(height: 16),
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(16)),
@@ -179,7 +178,6 @@ class _ExaminationPageState extends State<ExaminationPage> {
             },
           );
         } else {
-          // 서버에서 에러 응답
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('분석 실패: ${result['message']}')),
           );
@@ -192,15 +190,10 @@ class _ExaminationPageState extends State<ExaminationPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('서버 연결 오류: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('서버 연결 오류: $e'), backgroundColor: Colors.red),
       );
     } finally {
-      if (mounted) {
-        setState(() => _isUploading = false);
-      }
+      if (mounted) setState(() => _isUploading = false);
     }
   }
 
@@ -213,41 +206,38 @@ class _ExaminationPageState extends State<ExaminationPage> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: isGood ? Colors.green : Colors.redAccent, width: 2),
-            image: DecorationImage(
-              image: AssetImage(imagePath),
-              fit: BoxFit.cover,
-            ),
+            image: DecorationImage(image: AssetImage(imagePath), fit: BoxFit.cover),
           ),
           child: Align(
             alignment: Alignment.topRight,
             child: Container(
               margin: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                color: isGood ? Colors.green : Colors.redAccent,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                isGood ? Icons.check : Icons.close,
-                color: Colors.white,
-                size: 10,
-              ),
+              decoration: BoxDecoration(color: isGood ? Colors.green : Colors.redAccent, shape: BoxShape.circle),
+              child: Icon(isGood ? Icons.check : Icons.close, color: Colors.white, size: 10),
             ),
           ),
         ),
         const SizedBox(height: 4),
         Text(
           isGood ? '좋은 예시' : '나쁜 예시',
-          style: TextStyle(
-            fontSize: 11,
-            color: isGood ? Colors.green : Colors.redAccent,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(fontSize: 11, color: isGood ? Colors.green : Colors.redAccent, fontWeight: FontWeight.bold),
         )
       ],
     );
   }
 
-  Widget _buildDiseaseSection(String title, String diseaseType, XFile? selectedImage, IconData placeholderIcon) {
+  Widget _buildImageThumbnail(XFile img) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: kIsWeb
+          ? Image.network(img.path, width: 70, height: 70, fit: BoxFit.cover)
+          : Image.file(File(img.path), width: 70, height: 70, fit: BoxFit.cover),
+    );
+  }
+
+  Widget _buildDiseaseSection(String title, String diseaseType, List<XFile> selectedImages, IconData placeholderIcon) {
+    final hasImages = selectedImages.isNotEmpty;
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -257,71 +247,83 @@ class _ExaminationPageState extends State<ExaminationPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title, 
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)
-            ),
+            Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
             const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  flex: 4,
-                  child: AspectRatio(
-                    aspectRatio: 1,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(15),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      clipBehavior: Clip.hardEdge,
-                      child: selectedImage != null 
-                        ? (kIsWeb 
-                            ? Image.network(selectedImage.path, fit: BoxFit.cover) 
-                            : Image.file(File(selectedImage.path), fit: BoxFit.cover)) // 앱 환경일 때
-                        : Center(child: Icon(placeholderIcon, size: 40, color: Colors.grey[400])),
-                    ),
+            // 이미지 미리보기 영역
+            if (hasImages)
+              SizedBox(
+                height: 80,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: selectedImages.length,
+                  itemBuilder: (_, i) => Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: _buildImageThumbnail(selectedImages[i]),
                   ),
                 ),
+              )
+            else
+              Center(
+                child: Container(
+                  width: double.infinity,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Icon(placeholderIcon, size: 36, color: Colors.grey[400]),
+                ),
+              ),
+            const SizedBox(height: 12),
+            // 예시 이미지 + 안내 문구
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildExampleThumbnail(diseaseType == 'eye' ? 'assets/images/eye_good.png' : 'assets/images/skin_good.png', true),
+                const SizedBox(width: 16),
+                _buildExampleThumbnail(diseaseType == 'eye' ? 'assets/images/eye_bad.png' : 'assets/images/skin_bad.png', false),
                 const SizedBox(width: 16),
                 Expanded(
-                  flex: 6,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text(
-                        '환부의 사진을 밝고 선명하게 찍어 업로드해주세요.',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildExampleThumbnail(diseaseType == 'eye' ? 'assets/images/eye_good.png' : 'assets/images/skin_good.png', true),
-                          _buildExampleThumbnail(diseaseType == 'eye' ? 'assets/images/eye_bad.png' : 'assets/images/skin_bad.png', false),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                      ElevatedButton.icon(
-                        onPressed: _isUploading ? null : () => _pickAndUploadImage(diseaseType),
-                        icon: _isUploading 
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Icon(Icons.upload_file),
-                        label: Text(_isUploading ? '분석 중...' : '사진 올리고 분석하기'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      )
-                    ],
+                  child: Text(
+                    '환부를 다각도로 찍은 사진 1~5장을 선택하세요.',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                   ),
                 ),
               ],
-            )
+            ),
+            const SizedBox(height: 16),
+            // 사진 선택 버튼
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _isUploading ? null : () => _pickImages(diseaseType),
+                icon: const Icon(Icons.photo_library_outlined),
+                label: Text(hasImages ? '사진 다시 선택 (${selectedImages.length}장)' : '사진 선택하기 (최대 5장)'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            // 분석하기 버튼
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: (hasImages && !_isUploading) ? () => _uploadAndAnalyze(diseaseType, selectedImages) : null,
+                icon: _isUploading
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.biotech),
+                label: Text(_isUploading ? '분석 중...' : '분석하기'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -331,8 +333,7 @@ class _ExaminationPageState extends State<ExaminationPage> {
   @override
   Widget build(BuildContext context) {
     String petName = widget.petData?['pet_name'] ?? '반려동물';
-    String petType = widget.petData?['pet_type'] ?? '정보없음';
-    
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SingleChildScrollView(
@@ -354,31 +355,22 @@ class _ExaminationPageState extends State<ExaminationPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        //Text('AI 질환 검진소', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
                         Text('$petName의 걱정되는 부위가 있으신가요?',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
-            ),
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
                         const SizedBox(height: 4),
-                        //Text('현재 종: $petType', style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                        const Text(
-              '사진을 업로드하여 안구 및 피부 질환을 AI로 검사받으세요.',
-              style: TextStyle(fontSize: 14, color: Colors.white),
-            ),
+                        const Text('사진을 업로드하여 안구 및 피부 질환을 AI로 검사받으세요.',
+                            style: TextStyle(fontSize: 14, color: Colors.white)),
                       ],
                     ),
                   ),
                 ],
               ),
             ),
-            
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  '진단 부위 선택',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
-                ),
+                const Text('진단 부위 선택', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
                 GestureDetector(
                   onTap: () {
                     Navigator.push(
@@ -390,21 +382,15 @@ class _ExaminationPageState extends State<ExaminationPage> {
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.green[50],
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '이전 기록 보기 →',
-                      style: TextStyle(color: Colors.green[700], fontSize: 13, fontWeight: FontWeight.bold),
-                    ),
+                    decoration: BoxDecoration(color: Colors.green[50], borderRadius: BorderRadius.circular(20)),
+                    child: Text('이전 기록 보기 →', style: TextStyle(color: Colors.green[700], fontSize: 13, fontWeight: FontWeight.bold)),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            _buildDiseaseSection('👁️ 안구 질환 (Eye Disease)', 'eye', _eyeImage, Icons.visibility),
-            _buildDiseaseSection('🩹 피부 질환 (Skin Disease)', 'skin', _skinImage, Icons.healing),
+            _buildDiseaseSection('👁️ 안구 질환 (Eye Disease)', 'eye', _eyeImages, Icons.visibility),
+            _buildDiseaseSection('🩹 피부 질환 (Skin Disease)', 'skin', _skinImages, Icons.healing),
           ],
         ),
       ),

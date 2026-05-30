@@ -112,6 +112,42 @@ class AIEngine:
             print(f"Error loading models: {e}")
             self.is_loaded = False
 
+    def _get_probs(self, image_bytes: bytes, pet_t: str, dis_t: str) -> 'np.ndarray':
+        image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+        img_tensor = self.transform(image).unsqueeze(0).to(self.device)
+        feat_tensor = torch.zeros((1, self.json_feat_dim), dtype=torch.float32).to(self.device)
+        model = self.models[pet_t][dis_t]
+        with torch.no_grad():
+            if self.device.type == 'cuda':
+                with torch.amp.autocast('cuda'):
+                    output = model(img_tensor, feat_tensor)
+            else:
+                output = model(img_tensor, feat_tensor)
+            return torch.nn.functional.softmax(output, dim=1).cpu().numpy()[0]
+
+    def analyze_batch(self, images_bytes: list, pet_type: str, disease_type: str) -> dict:
+        if not self.is_loaded:
+            return {"status": "error", "message": "Models are not loaded yet."}
+        pet_t = 'cat' if '고양이' in pet_type or 'cat' in pet_type.lower() else 'dog'
+        dis_t = 'skin' if 'skin' in disease_type.lower() else 'eyes'
+        if self.models[pet_t][dis_t] is None:
+            return {"status": "error", "message": "Unsupported combination"}
+        class_list = self.classes[pet_t][dis_t]
+        try:
+            prob_arrays = [self._get_probs(img, pet_t, dis_t) for img in images_bytes]
+            avg_probs = np.mean(prob_arrays, axis=0)
+            pred_idx = int(np.argmax(avg_probs))
+            return {
+                "status": "success",
+                "diagnosis": class_list[pred_idx],
+                "probability": float(avg_probs[pred_idx]) * 100,
+                "pet_type_detected": pet_t,
+                "disease_category": dis_t,
+                "images_analyzed": len(images_bytes)
+            }
+        except Exception as e:
+            return {"status": "error", "message": f"Batch inference failed: {str(e)}"}
+
     def analyze(self, image_bytes: bytes, pet_type: str, disease_type: str):
         if not self.is_loaded:
             return {"status": "error", "message": "Models are not loaded yet."}

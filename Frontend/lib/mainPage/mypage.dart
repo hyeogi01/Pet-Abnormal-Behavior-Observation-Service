@@ -117,6 +117,7 @@ class _MyPageState extends State<MyPage> {
           setState(() {
             _recordingInterval = data['settings']['recording_interval'] ?? 60;
             _diaryCoverType = data['settings']['diary_cover_type'] ?? 'happy';
+            _isPushEnabled = data['settings']['push_notifications_enabled'] ?? true;
           });
         }
       }
@@ -135,6 +136,7 @@ class _MyPageState extends State<MyPage> {
         body: jsonEncode({
           'recording_interval': _recordingInterval,
           'diary_cover_type': _diaryCoverType,
+          'push_notifications_enabled': _isPushEnabled,
         }),
       );
       if (response.statusCode == 200) {
@@ -244,7 +246,10 @@ class _MyPageState extends State<MyPage> {
                   title: const Text('이상행동 푸시 알림', style: TextStyle(fontWeight: FontWeight.w500)),
                   value: _isPushEnabled,
                   activeColor: Colors.orange,
-                  onChanged: (val) => setState(() => _isPushEnabled = val),
+                  onChanged: (val) {
+                    setState(() => _isPushEnabled = val);
+                    _saveSettings();
+                  },
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                 ),
                 const SizedBox(height: 20),
