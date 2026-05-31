@@ -94,7 +94,13 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
   // 2. Fetch recent diaries
   List<dynamic> recentDiaries = [];
   bool isDiaryLoading = true;
-  // final String baseUrl = "http://localhost:8080"; // Config 사용으로 제거
+
+  // 통계 데이터
+  int _totalDiaryCount = 0;
+  int _weeklyAnalyzedCount = 0;
+  double _happyRatio = 0.0;
+  double _stressRatio = 0.0;
+  String _weeklyMessage = '';
   @override
   void initState() {
     super.initState();
@@ -139,9 +145,12 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
       isLoading = true;
       isDiaryLoading = true;
     });
+    // pet_type이 필요한 _fetchWeeklyStats 때문에 petInfo 먼저 로드
+    await _fetchPetInfo();
     await Future.wait([
-      _fetchPetInfo(),
       _fetchRecentDiaries(),
+      _fetchTotalDiaryCount(),
+      _fetchWeeklyStats(),
     ]);
     setState(() {
       isLoading = false;
@@ -192,6 +201,62 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
     }
     setState(() => isDiaryLoading = false);
   }
+  Future<void> _fetchTotalDiaryCount() async {
+    final url = Uri.parse('${Config.apiBaseUrl}/api/daily-diaries/${widget.userId}');
+    try {
+      final response = await http.get(url, headers: Config.ngrokHeaders);
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded['status'] == 'success') {
+          setState(() => _totalDiaryCount = (decoded['data'] as List).length);
+        }
+      }
+    } catch (e) {
+      debugPrint('Total diary count error: $e');
+    }
+  }
+
+  Future<void> _fetchWeeklyStats() async {
+    final petType = petData?['pet_type'] ?? 'dog';
+    final url = Uri.parse('${Config.apiBaseUrl}/api/statistics/${widget.userId}?pet_type=$petType');
+    try {
+      final response = await http.get(url, headers: Config.ngrokHeaders);
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded['status'] == 'success') {
+          final stats = decoded['statistics'];
+          final ei = stats['emotion_index'] ?? {};
+          final happy = (ei['happy_ratio'] ?? 0.0).toDouble();
+          final stress = (ei['stress_ratio'] ?? 0.0).toDouble();
+          final petName = petData?['pet_name'] ?? '';
+
+          String message = '';
+          if (petType == 'dog') {
+            message = stats['patella_warnings']?['message'] ?? '';
+          }
+          if (message.isEmpty) {
+            if (happy >= 70) {
+              message = '🎉 $petName는 이번 주 매우 건강하게 지냈어요! 활동량과 식사 패턴이 안정적입니다.';
+            } else if (stress >= 40) {
+              message = '😟 이번 주 스트레스 수치가 조금 높아요. 주의 깊게 살펴봐 주세요.';
+            } else {
+              message = '🐾 이번 주 $petName의 감정 상태는 양호합니다.';
+            }
+          }
+
+          setState(() {
+            _weeklyAnalyzedCount = stats['total_logs_analyzed'] ?? 0;
+            _happyRatio = happy;
+            _stressRatio = stress;
+            _weeklyMessage = message;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Weekly stats error: $e');
+    }
+  }
+
   // 하단 탭 클릭 시 상태 변경 함수
   void _onItemTapped(int index) {
     setState(() {
@@ -248,7 +313,6 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
   // --- 메인 홈 대시보드 UI ---
   Widget _buildDashboardHome() {
     String petName = petData?['pet_name'] ?? '콩이';
-    String petType = petData?['pet_type'] ?? '반려동물';
     return SingleChildScrollView(
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
@@ -354,7 +418,6 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
 
   Widget _buildHeaderCard() {
     String petName = petData?['pet_name'] ?? '콩이';
-    String petType = petData?['pet_type'] ?? '반려동물';
     return Container(
       padding: EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -380,9 +443,9 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildStatItem('12', '총 일기'),
-              _buildStatItem('85', '평균 활동'),
-              _buildStatItem('98%', '건강도'),
+              _buildStatItem('$_totalDiaryCount', '총 일기'),
+              _buildStatItem('$_weeklyAnalyzedCount', '이번 주 분석'),
+              _buildStatItem('${_happyRatio.toStringAsFixed(0)}%', '행복도'),
             ],
           )
         ],
@@ -476,8 +539,6 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
   }
 
   Widget _buildTrendSection() {
-    String petName = petData?['pet_name'] ?? '콩이';
-    String petType = petData?['pet_type'] ?? '반려동물';
     return Container(
       padding: EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -496,21 +557,26 @@ class _PetHealthDashboardState extends State<PetHealthDashboard> {
             ],
           ),
           SizedBox(height: 10),
-          _buildTrendRow('평균 활동량', 0.82, Colors.green, '82%'),
-          _buildTrendRow('체중 관리', 0.95, Color(0xff28B09A), '95%'),
-          _buildTrendRow('스트레스 관리', 0.88, Color(0xffF14343), '88%'),
+          _buildTrendRow('긍정 감정', _happyRatio / 100, Colors.green, '${_happyRatio.toStringAsFixed(0)}%'),
+          _buildTrendRow('안정 상태', (100 - _stressRatio) / 100, Color(0xff28B09A), '${(100 - _stressRatio).toStringAsFixed(0)}%'),
+          _buildTrendRow('스트레스', _stressRatio / 100, Color(0xffF14343), '${_stressRatio.toStringAsFixed(0)}%'),
           SizedBox(height: 10),
           Container(
             width: double.infinity,
             padding: EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: Colors.green[50],
+              color: _stressRatio >= 40 ? Colors.orange[50] : Colors.green[50],
               borderRadius: BorderRadius.circular(8.r),
-              border: Border.all(color: Colors.green[100]!),
+              border: Border.all(color: _stressRatio >= 40 ? Colors.orange[100]! : Colors.green[100]!),
             ),
             child: Text(
-              '🎉 $petName는 이번 주 매우 건강하게 지냈어요! 활동량과 식사 패턴이 안정적입니다.',
-              style: TextStyle(color: Colors.green, fontSize: 13),
+              _weeklyMessage.isNotEmpty
+                  ? _weeklyMessage
+                  : '📊 이번 주 분석 데이터가 아직 없습니다.',
+              style: TextStyle(
+                color: _stressRatio >= 40 ? Colors.orange[700] : Colors.green,
+                fontSize: 13,
+              ),
             ),
           ),
         ],
