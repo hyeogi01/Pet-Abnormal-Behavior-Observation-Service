@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:http/http.dart' as http;
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'cam_sender_page.dart';
 import 'package:pet_diary/config.dart';
@@ -83,6 +84,13 @@ class _CamConnectPageState extends State<CamConnectPage> with SingleTickerProvid
         final deviceId = result['device_id'] ?? 'cam_${DateTime.now().millisecondsSinceEpoch}';
         final userId = result['user_id'] ?? '';
 
+        // 자격증명 로컬 저장 → 다음 실행 시 자동 재연결
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('cam_device_id', deviceId);
+        await prefs.setString('cam_user_id', userId);
+        await prefs.setString('cam_device_model', await _getDeviceModel());
+
+        if (!mounted) return;
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(

@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pet_diary/config.dart';
+import 'package:pet_diary/discription/onboarding_page.dart';
 import 'package:pet_diary/services/pet_detector.dart';
 import 'package:pet_diary/services/webrtc_service.dart';
 
@@ -267,6 +269,48 @@ class _CamSenderPageState extends State<CamSenderPage> {
 
   // ──────────────────────────────────────────────────────────────
 
+  void _showExitDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2C2C2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('CCTV 모드 종료', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: const Text(
+          '어떻게 하시겠습니까?',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          // 일시 종료 (자격증명 유지 → 다음 실행 시 자동 재연결)
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.pop(context);
+            },
+            child: const Text('일시 종료', style: TextStyle(color: Colors.white54)),
+          ),
+          // 연결 해제 (자격증명 삭제 → 다음 실행 시 QR 재등록 필요)
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.remove('cam_device_id');
+              await prefs.remove('cam_user_id');
+              await prefs.remove('cam_device_model');
+              if (!mounted) return;
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const OnboardingPage()),
+                (route) => false,
+              );
+            },
+            child: const Text('연결 해제', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _normalTimer?.cancel();
@@ -315,10 +359,7 @@ class _CamSenderPageState extends State<CamSenderPage> {
                     ),
                     child: IconButton(
                       icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () {
-                        // 송출 종료 시 재확인 다이얼로그 띄울 수 있음
-                        Navigator.pop(context);
-                      },
+                      onPressed: _showExitDialog,
                     ),
                   ),
                   Container(

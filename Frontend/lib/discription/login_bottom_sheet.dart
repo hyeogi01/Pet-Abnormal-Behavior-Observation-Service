@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pet_diary/main.dart';
 import 'package:pet_diary/config.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:pet_diary/mainPage/cam_connect_page.dart';
+import 'package:pet_diary/mainPage/cam_sender_page.dart';
 import 'package:pet_diary/pet_name_input_page.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -143,6 +145,108 @@ class _LoginSheetState extends State<_LoginSheet> {
     }
   }
 
+  Future<void> _handleCamMode(BuildContext context) async {
+    // async 전에 미리 캡처
+    final navigator = Navigator.of(context);
+
+    final prefs = await SharedPreferences.getInstance();
+    final deviceId = prefs.getString('cam_device_id');
+    final userId = prefs.getString('cam_user_id');
+    final deviceModel = prefs.getString('cam_device_model') ?? 'Unknown Device';
+
+    if (!mounted) return;
+
+    if (deviceId != null && userId != null) {
+      // 저장된 자격증명 있음 → 확인 다이얼로그 표시
+      showDialog(
+        context: navigator.context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('이전 연결 정보 발견', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('이전에 연결된 계정 정보가 있습니다.'),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      const Icon(Icons.person_outline, size: 16, color: Colors.orange),
+                      const SizedBox(width: 6),
+                      Text(userId, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    ]),
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      const Icon(Icons.phone_android, size: 16, color: Colors.grey),
+                      const SizedBox(width: 6),
+                      Text(deviceModel, style: const TextStyle(color: Colors.black54, fontSize: 13)),
+                    ]),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text('이 계정으로 바로 연결할까요?', style: TextStyle(fontSize: 13, color: Colors.black54)),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                navigator.pop();
+                navigator.push(MaterialPageRoute(builder: (_) => const CamConnectPage()));
+              },
+              child: const Text('다른 계정으로', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final outerNavigator = navigator;
+                Navigator.pop(ctx);
+                // 서버에 재등록
+                try {
+                  await http.post(
+                    Uri.parse('${Config.apiBaseUrl}/api/devices/reconnect'),
+                    headers: Config.ngrokHeaders,
+                    body: jsonEncode({
+                      'device_id': deviceId,
+                      'user_id': userId,
+                      'device_model': deviceModel,
+                    }),
+                  ).timeout(const Duration(seconds: 5));
+                } catch (_) {}
+                if (!mounted) return;
+                outerNavigator.pop();
+                outerNavigator.push(MaterialPageRoute(
+                  builder: (_) => CamSenderPage(deviceId: deviceId, userId: userId),
+                ));
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('바로 연결'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // 저장된 자격증명 없음 → 기존 QR 페어링 플로우
+      navigator.pop();
+      navigator.push(MaterialPageRoute(builder: (_) => const CamConnectPage()));
+    }
+  }
+
+
   void _showEmailAuthDialog() {
     final idController = TextEditingController();
     final pwController = TextEditingController();
@@ -251,12 +355,7 @@ class _LoginSheetState extends State<_LoginSheet> {
           ),
           SizedBox(height: 8.h),
           TextButton.icon(
-            onPressed: () {
-              final navigator = Navigator.of(context);
-              navigator.pop();
-              navigator.push(
-                  MaterialPageRoute(builder: (_) => const CamConnectPage()));
-            },
+            onPressed: () => _handleCamMode(context),
             icon: const Icon(Icons.videocam, color: Colors.orange, size: 20),
             label: const Text("공기계를 CCTV로 사용하기",
                 style: TextStyle(color: Colors.orange,

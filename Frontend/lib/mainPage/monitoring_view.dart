@@ -5,8 +5,13 @@ import 'package:pet_diary/config.dart';
 
 class MonitoringView extends StatefulWidget {
   final String userId;
+  final String targetCamDeviceId;
 
-  const MonitoringView({super.key, required this.userId});
+  const MonitoringView({
+    super.key,
+    required this.userId,
+    required this.targetCamDeviceId,
+  });
 
   @override
   State<MonitoringView> createState() => _MonitoringViewState();
@@ -30,7 +35,7 @@ class _MonitoringViewState extends State<MonitoringView> {
     // Connect to Signaling Server to receive stream
     _webrtcService = WebRTCService(
       userId: widget.userId,
-      deviceId: 'viewer_${DateTime.now().millisecondsSinceEpoch}',
+      deviceId: 'viewer_${widget.targetCamDeviceId}_${DateTime.now().millisecondsSinceEpoch}',
       signalingUrl: Config.signalingUrl,
       isSender: false,
     );

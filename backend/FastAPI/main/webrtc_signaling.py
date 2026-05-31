@@ -17,6 +17,11 @@ class RegisterCodeRequest(BaseModel):
     pairing_code: str
     user_id: str
 
+class ReconnectRequest(BaseModel):
+    device_id: str
+    user_id: str
+    device_model: str = "Unknown Device"
+
 @router.post("/api/devices/register-code")
 async def register_pairing_code(req: RegisterCodeRequest):
     pairing_codes[req.pairing_code] = req.user_id
@@ -65,6 +70,29 @@ async def list_devices(user_id: str):
         "data": devices
     }
 
+@router.post("/api/devices/reconnect")
+async def reconnect_device(req: ReconnectRequest):
+    """공기계 앱 재시작 시 페어링 코드 없이 기존 device_id로 재등록"""
+    if req.user_id not in user_devices:
+        user_devices[req.user_id] = []
+    user_devices[req.user_id] = [d for d in user_devices[req.user_id] if d['device_id'] != req.device_id]
+    user_devices[req.user_id].append({
+        "device_id": req.device_id,
+        "model": req.device_model,
+        "connected_at": "방금 전"
+    })
+    print(f"[WebRTC] Reconnected device {req.device_id} for user {req.user_id}")
+    return {"status": "success", "device_id": req.device_id, "user_id": req.user_id}
+
+@router.delete("/api/devices/{user_id}/{device_id}")
+async def delete_device(user_id: str, device_id: str):
+    if user_id in user_devices:
+        original = user_devices[user_id]
+        user_devices[user_id] = [d for d in original if d['device_id'] != device_id]
+        if len(user_devices[user_id]) < len(original):
+            return {"status": "success", "message": "기기가 삭제되었습니다."}
+    return {"status": "error", "message": "기기를 찾을 수 없습니다."}
+
 # WebRTC 시그널링을 위한 WebSocket 연결 관리
 class ConnectionManager:
     def __init__(self):
@@ -83,18 +111,34 @@ class ConnectionManager:
             del self.active_connections[user_id][device_id]
             print(f"[WebRTC] {device_id} disconnected for user {user_id}")
 
-    async def send_personal_message(self, message: str, websocket: WebSocket):
-        await websocket.send_text(message)
+    async def relay_message(self, message: str, user_id: str, sender_device_id: str):
+        """
+        뷰어(viewer_*) → 특정 카메라로, 카메라 → 해당 카메라를 타겟으로 하는 뷰어들로 릴레이.
+        뷰어 device_id 형식: viewer_{cam_device_id}_{timestamp}
+        """
+        if user_id not in self.active_connections:
+            return
 
-    async def broadcast_to_user(self, message: str, user_id: str, sender_device_id: str):
-        # 같은 유저 아이디로 접속한 다른 모든 기기에게 메시지 (Offer/Answer/ICE) 전달
-        if user_id in self.active_connections:
-            for d_id, connection in self.active_connections[user_id].items():
-                if d_id != sender_device_id:
+        if sender_device_id.startswith('viewer_'):
+            # 뷰어 → 타겟 카메라로 전달
+            # 예: 'viewer_cam_123456_1717000000000' → target: 'cam_123456'
+            after_prefix = sender_device_id[len('viewer_'):]
+            target_cam_id = after_prefix[:after_prefix.rfind('_')]
+            target_ws = self.active_connections[user_id].get(target_cam_id)
+            if target_ws:
+                try:
+                    await target_ws.send_text(message)
+                except Exception as e:
+                    print(f"Error sending to cam {target_cam_id}: {e}")
+        else:
+            # 카메라 → 이 카메라를 타겟으로 하는 뷰어들에게 전달
+            prefix = f'viewer_{sender_device_id}_'
+            for d_id, connection in list(self.active_connections[user_id].items()):
+                if d_id.startswith(prefix):
                     try:
                         await connection.send_text(message)
                     except Exception as e:
-                        print(f"Error sending to {d_id}: {e}")
+                        print(f"Error sending to viewer {d_id}: {e}")
 
 manager = ConnectionManager()
 
@@ -105,6 +149,7 @@ async def webrtc_endpoint(websocket: WebSocket, user_id: str, device_id: str):
         while True:
             data = await websocket.receive_text()
             # 수신한 시그널링 데이터(SDP, ICE)를 릴레이
-            await manager.broadcast_to_user(data, user_id, device_id)
+            await manager.relay_message(data, user_id, device_id)
     except WebSocketDisconnect:
         manager.disconnect(websocket, user_id, device_id)
+
