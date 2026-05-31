@@ -11,25 +11,35 @@ class OnboardingPage2 extends StatefulWidget {
 }
 
 class _OnboardingPage2State extends State<OnboardingPage2>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _floatController;
-  late final Animation<double> _floatAnim;
+    with TickerProviderStateMixin {
+  late final AnimationController _floatControllerY;
+  late final AnimationController _floatControllerX;
+  late final Animation<double> _floatAnimY;
+  late final Animation<double> _floatAnimX;
 
   @override
   void initState() {
     super.initState();
-    _floatController = AnimationController(
+    _floatControllerY = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
+      duration: const Duration(milliseconds: 1700),
     )..repeat(reverse: true);
-    _floatAnim = Tween<double>(begin: 0, end: -12).animate(
-      CurvedAnimation(parent: _floatController, curve: Curves.easeInOut),
+    _floatAnimY = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _floatControllerY, curve: Curves.easeInOut),
+    );
+    _floatControllerX = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2300),
+    )..repeat(reverse: true);
+    _floatAnimX = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _floatControllerX, curve: Curves.easeInOut),
     );
   }
 
   @override
   void dispose() {
-    _floatController.dispose();
+    _floatControllerY.dispose();
+    _floatControllerX.dispose();
     super.dispose();
   }
 
@@ -78,18 +88,30 @@ class _OnboardingPage2State extends State<OnboardingPage2>
                           ),
                         ),
                       ),
-                      Positioned(
-                        right: 12, bottom: 12,
-                        child: AnimatedBuilder(
-                          animation: _floatAnim,
-                          builder: (_, __) => Transform.translate(
-                            offset: Offset(0, _floatAnim.value),
-                            child: Image.asset(
-                              'assets/images/pet_character.png',
-                              width: 80, height: 80, fit: BoxFit.contain,
-                              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                            ),
-                          ),
+                      Positioned.fill(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            const charSize = 80.0;
+                            const padding = 12.0;
+                            final maxX = constraints.maxWidth - charSize - padding * 2;
+                            final maxY = constraints.maxHeight - charSize - padding * 2;
+                            return AnimatedBuilder(
+                              animation: Listenable.merge([_floatAnimX, _floatAnimY]),
+                              builder: (_, __) => Stack(
+                                children: [
+                                  Positioned(
+                                    left: padding + _floatAnimX.value * maxX,
+                                    top: padding + _floatAnimY.value * maxY,
+                                    child: Image.asset(
+                                      'assets/images/pet_character.png',
+                                      width: charSize, height: charSize, fit: BoxFit.contain,
+                                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ],

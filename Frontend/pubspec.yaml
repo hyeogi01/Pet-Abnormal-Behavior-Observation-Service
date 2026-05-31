@@ -70,12 +70,12 @@ flutter_launcher_icons:
   image_path: "assets/icon/app_icon.png"
 
 flutter_native_splash:
-  color: "#FFFFFF"
+  color: "#F2F5DE"
   image: assets/splash/splash_logo.png
   android: true
   ios: true
   android_12:
-    color: "#FFFFFF"
+    color: "#F2F5DE"
     image: assets/splash/splash_logo.png
 
 # For information on the generic Dart part of this file, see the
