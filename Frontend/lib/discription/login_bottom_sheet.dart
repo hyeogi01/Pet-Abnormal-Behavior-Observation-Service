@@ -47,6 +47,11 @@ class _LoginSheet extends StatefulWidget {
 }
 
 class _LoginSheetState extends State<_LoginSheet> {
+  Future<void> _saveLoginState(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('logged_in_user_id', userId);
+  }
+
   Future<void> _handleGoogleSignIn() async {
     // async 전에 미리 캡처 — popUntil 이후 context가 unmount돼도 안전
     final navigator = Navigator.of(context);
@@ -77,6 +82,7 @@ class _LoginSheetState extends State<_LoginSheet> {
       final result = jsonDecode(response.body);
 
       if (response.statusCode == 200 && result['status'] == 'success') {
+        await _saveLoginState(result['user_id']);
         navigator.popUntil((route) => route.isFirst);
         if (result['has_pet_info']) {
           navigator.pushReplacement(
@@ -120,6 +126,7 @@ class _LoginSheetState extends State<_LoginSheet> {
       final result = jsonDecode(response.body);
 
       if (response.statusCode == 200 && result['status'] == 'success') {
+        await _saveLoginState(id);
         navigator.popUntil((route) => route.isFirst);
         if (isSignup) {
           navigator.pushReplacement(

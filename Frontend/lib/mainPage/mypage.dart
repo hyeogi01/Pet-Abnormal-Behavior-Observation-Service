@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pet_diary/discription/onboarding_page.dart'; // import for OnboardingPage
 import 'profile_edit_page.dart';
 import 'weight_history_page.dart';
@@ -361,11 +362,14 @@ class _MyPageState extends State<MyPage> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context); // close dialog
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.remove('logged_in_user_id');
+              if (!context.mounted) return;
               Navigator.pushAndRemoveUntil(
-                context, 
-                MaterialPageRoute(builder: (context) => const OnboardingPage()), 
+                context,
+                MaterialPageRoute(builder: (context) => const OnboardingPage()),
                 (route) => false
               );
             },

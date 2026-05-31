@@ -16,6 +16,8 @@ import 'package:pet_diary/mainPage/photo_gallery.dart'; // Phase 4 Photo Gallery
 import 'package:pet_diary/mainPage/diary_detail.dart'; // Phase 4.1 Detail View
 import 'package:pet_diary/mainPage/monitoring_page.dart';
 import 'package:pet_diary/config.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:pet_diary/theme.dart';
@@ -35,7 +37,8 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 }
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   if (!kIsWeb) {
     await Firebase.initializeApp();
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
@@ -57,7 +60,7 @@ void main() async {
       builder: (context, child) {
         return MaterialApp(
           //home: const ExaminationPage(),
-          home: const OnboardingPage(),
+          home: const _AuthGate(),
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme,
           locale: const Locale('ko', 'KR'),
@@ -74,6 +77,48 @@ void main() async {
       },
     ),
   );
+}
+
+class _AuthGate extends StatefulWidget {
+  const _AuthGate();
+
+  @override
+  State<_AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<_AuthGate> {
+  @override
+  void initState() {
+    super.initState();
+    _checkSavedLogin();
+  }
+
+  Future<void> _checkSavedLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedUserId = prefs.getString('logged_in_user_id');
+
+    FlutterNativeSplash.remove();
+    if (!mounted) return;
+
+    if (savedUserId != null && savedUserId.isNotEmpty) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => PetHealthDashboard(userId: savedUserId)),
+      );
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const OnboardingPage()),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(child: CircularProgressIndicator()),
+    );
+  }
 }
 
 class PetHealthDashboard extends StatefulWidget {
